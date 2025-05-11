@@ -183,14 +183,14 @@ export default function MapUploaderApp() {
   if (!isLoaded) return <div>Loading map...</div>;
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold">ActivityMapper</h1>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <label className="block">Address CSV
-          <input type="file" accept=".csv" onChange={handleAddressUpload} className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer" />
+    <div className="p-6 max-w-5xl mx-auto">
+      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+      <div className="flex flex-col gap-5 sm:flex-row pb-5">
+        <label className="block text-md font-medium sm:w-1/2">Address CSV
+          <input type="file" accept=".csv" onChange={handleAddressUpload} className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
-        <label className="block">Lat/Lon CSV
-          <input type="file" accept=".csv" onChange={handleLatLonUpload} className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer" />
+        <label className="block text-md font-medium sm:w-1/2">Lat/Lon CSV
+          <input type="file" accept=".csv" onChange={handleLatLonUpload} className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
       </div>
       <GoogleMap
