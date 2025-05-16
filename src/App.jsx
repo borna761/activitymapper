@@ -1,5 +1,5 @@
-// MapUploaderApp.jsx — Simplified to use standard Marker
-import React, { useState, useEffect, useRef } from "react";
+// MapUploaderApp.jsx — Simplified and Fixed
+import React, { useState, useEffect } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -24,10 +24,12 @@ const ACTIVITY_LABELS = {
   SC: "Study Circle",
 };
 
+const ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons";
 const HOME_ICON_URL = "/icons/home.png";
 
 export default function MapUploaderApp() {
-  const [loading, setLoading] = useState(false);
+  const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [isLatLonLoading, setIsLatLonLoading] = useState(false);
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -56,7 +58,7 @@ export default function MapUploaderApp() {
   const handleLatLonUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setLoading(true);
+    setIsLatLonLoading(true);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -76,7 +78,7 @@ export default function MapUploaderApp() {
           setCenter(coords[0]);
           setZoom(10);
         }
-        setLoading(false);
+        setIsLatLonLoading(false);
       },
     });
   };
@@ -84,7 +86,19 @@ export default function MapUploaderApp() {
   const handleAddressUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setLoading(true);
+    setIsAddressLoading(true);
+
+    const processResults = (results) => {
+      const deduped = Array.from(
+        new Map(results.map((p) => [`${p.lat},${p.lng}`, p])).values()
+      );
+      setHomeMarkers(deduped);
+      if (deduped.length) {
+        setCenter(deduped[0]);
+        setZoom(10);
+      }
+      setIsAddressLoading(false);
+    };
 
     if (file.name.endsWith(".xlsx")) {
       const reader = new FileReader();
@@ -105,15 +119,7 @@ export default function MapUploaderApp() {
           });
           if (pt) results.push(pt);
         }
-        const deduped = Array.from(
-          new Map(results.map((p) => [`${p.lat},${p.lng}`, p])).values()
-        );
-        setHomeMarkers(deduped);
-        if (deduped.length) {
-          setCenter(deduped[0]);
-          setZoom(10);
-        }
-        setLoading(false);
+        processResults(results);
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -133,15 +139,7 @@ export default function MapUploaderApp() {
             });
             if (pt) results.push(pt);
           }
-          const deduped = Array.from(
-            new Map(results.map((p) => [`${p.lat},${p.lng}`, p])).values()
-          );
-          setHomeMarkers(deduped);
-          if (deduped.length) {
-            setCenter(deduped[0]);
-            setZoom(10);
-          }
-          setLoading(false);
+          processResults(results);
         },
       });
     }
@@ -158,11 +156,16 @@ export default function MapUploaderApp() {
       "feature:administrative|visibility:off",
       "saturation:-50",
       "lightness:20",
-    ].map(s => `style=${encodeURIComponent(s)}`).join("&");
+    ]
+      .map((s) => `style=${encodeURIComponent(s)}`)
+      .join("&");
 
-    const validActivity = activityMarkers.filter(m => ICON_PATHS[m.activity]);
-    const markerStrings = validActivity.map(m =>
-      `markers=icon:/icons/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
+    const validActivity = activityMarkers.filter(
+      (m) => m.activity && ICON_COLORS[m.activity]
+    );
+    const markerStrings = validActivity.map(
+      (m) =>
+        `markers=icon:${ICON_BASE_URL}/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
     );
     const homeGroup = homeMarkers.map(
       (p) => `markers=icon:${HOME_ICON_URL}|${p.lat},${p.lng}`
@@ -180,18 +183,12 @@ export default function MapUploaderApp() {
   };
 
   if (!isLoaded) return <div>Loading map...</div>;
-  if (loading)
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-        <div className="bg-white px-6 py-4 rounded shadow-lg text-center">
-          <p className="text-lg text-gray-700 font-medium">Geocoding...</p>
-        </div>
-      </div>
-    );
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">
+        Activity Mapper
+      </h1>
       <div className="flex flex-col gap-5 sm:flex-row pb-5">
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
@@ -208,7 +205,8 @@ export default function MapUploaderApp() {
             type="file"
             accept=".csv,.xlsx"
             onChange={handleAddressUpload}
-            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400"
+          />
         </label>
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
@@ -223,9 +221,10 @@ export default function MapUploaderApp() {
           </span>
           <input
             type="file"
-            accept=".csv,.xlsx"
+            accept=".csv"
             onChange={handleLatLonUpload}
-            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400"
+          />
         </label>
       </div>
       <GoogleMap
@@ -239,7 +238,7 @@ export default function MapUploaderApp() {
             key={`act-${idx}`}
             position={{ lat: m.lat, lng: m.lng }}
             icon={{
-              url: `https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons/${m.activity.toLowerCase()}.png`,
+              url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
               size: new window.google.maps.Size(16, 16),
               scaledSize: new window.google.maps.Size(16, 16),
               anchor: new window.google.maps.Point(8, 8),
@@ -250,7 +249,12 @@ export default function MapUploaderApp() {
           <Marker
             key={`home-${idx}`}
             position={p}
-            icon={{ url: HOME_ICON_URL, scaledSize: new window.google.maps.Size(12, 12) }}
+            icon={{
+              url: HOME_ICON_URL,
+              size: new window.google.maps.Size(12, 12),
+              scaledSize: new window.google.maps.Size(12, 12),
+              anchor: new window.google.maps.Point(6, 6),
+            }}
             onClick={() => setHomeMarkers((prev) => prev.filter((_, i) => i !== idx))}
           />
         ))}
@@ -259,11 +263,11 @@ export default function MapUploaderApp() {
         {Object.entries(ICON_COLORS).map(([key, color]) => (
           <div key={key} className="flex items-center space-x-2">
             <img
-              src={`https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons/${key.toLowerCase()}.png`}
+              src={`${ICON_BASE_URL}/${key.toLowerCase()}.png`}
               alt={key}
               className="w-4 h-4"
             />
-            <span>{key}</span>
+            <span>{ACTIVITY_LABELS[key]}</span>
           </div>
         ))}
         <div className="flex items-center space-x-2">
