@@ -30,9 +30,12 @@ const ACTIVITY_LABELS = {
   SC: "Study Circle",
 };
 
-const HOME_ICON_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper/home.png";
+const HOME_ICON_URL = "/icons/home.png";
 
 export default function MapUploaderApp() {
+  const [isAddressLoading, setIsAddressLoading] = useState(false);
+  const [isLatLonLoading, setIsLatLonLoading] = useState(false);
+
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -66,6 +69,7 @@ export default function MapUploaderApp() {
   const handleLatLonUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setIsLatLonLoading(true);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -81,6 +85,7 @@ export default function MapUploaderApp() {
           setCenter(coords[0]);
           setZoom(10);
         }
+        setIsLatLonLoading(false);
       },
     });
   };
@@ -88,6 +93,7 @@ export default function MapUploaderApp() {
   const handleAddressUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setIsAddressLoading(true);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -110,6 +116,7 @@ export default function MapUploaderApp() {
           setCenter(results[0]);
           setZoom(10);
         }
+        setIsAddressLoading(false);
       },
     });
   };
@@ -160,7 +167,7 @@ export default function MapUploaderApp() {
 
     const validActivity = activityMarkers.filter(m => ICON_PATHS[m.activity]);
     const markerStrings = validActivity.map(m =>
-      `markers=icon:https://cdn.jsdelivr.net/gh/borna761/activitymapper/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
+      `markers=icon:/icons/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
     );
 
     const homeGroup = homeMarkers.map(p =>
@@ -183,14 +190,42 @@ export default function MapUploaderApp() {
   if (!isLoaded) return <div>Loading map...</div>;
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold">ActivityMapper</h1>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <label className="block">Address CSV
-          <input type="file" accept=".csv" onChange={handleAddressUpload} className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer" />
+    <div className="p-6 max-w-5xl mx-auto">
+      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+      <div className="flex flex-col gap-5 sm:flex-row pb-5">
+        <label className="block text-md font-medium sm:w-1/2">
+          <span className="flex justify-between">
+            Address CSV
+            {isAddressLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
+            )}
+          </span>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleAddressUpload}
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
-        <label className="block">Lat/Lon CSV
-          <input type="file" accept=".csv" onChange={handleLatLonUpload} className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer" />
+        <label className="block text-md font-medium sm:w-1/2">
+          <span className="flex justify-between">
+            Lat/Long CSV
+            {isLatLonLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
+            )}
+          </span>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleLatLonUpload}
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
       </div>
       <GoogleMap
