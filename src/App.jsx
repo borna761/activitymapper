@@ -17,7 +17,14 @@ const ICON_COLORS = {
   SC: "#9C27B0",
 };
 
-const HOME_ICON_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons/home.png";
+const ACTIVITY_LABELS = {
+  CC: "Children's Class",
+  DM: "Devotional",
+  JY: "Junior Youth",
+  SC: "Study Circle",
+};
+
+const HOME_ICON_URL = "/icons/home.png";
 
 export default function MapUploaderApp() {
   const [loading, setLoading] = useState(false);
@@ -151,12 +158,11 @@ export default function MapUploaderApp() {
       "feature:administrative|visibility:off",
       "saturation:-50",
       "lightness:20",
-    ]
-      .map((s) => `style=${encodeURIComponent(s)}`)
-      .join("&");
-    const validActivity = activityMarkers.filter((m) => m.activity && ICON_COLORS[m.activity]);
-    const markerStrings = validActivity.map(
-      (m) => `markers=icon:https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
+    ].map(s => `style=${encodeURIComponent(s)}`).join("&");
+
+    const validActivity = activityMarkers.filter(m => ICON_PATHS[m.activity]);
+    const markerStrings = validActivity.map(m =>
+      `markers=icon:/icons/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
     );
     const homeGroup = homeMarkers.map(
       (p) => `markers=icon:${HOME_ICON_URL}|${p.lat},${p.lng}`
@@ -184,26 +190,42 @@ export default function MapUploaderApp() {
     );
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold">ActivityMapper</h1>
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <label className="block">
-          Address CSV
+    <div className="p-6 max-w-5xl mx-auto">
+      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+      <div className="flex flex-col gap-5 sm:flex-row pb-5">
+        <label className="block text-md font-medium sm:w-1/2">
+          <span className="flex justify-between">
+            Address CSV
+            {isAddressLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
+            )}
+          </span>
           <input
             type="file"
             accept=".csv,.xlsx"
             onChange={handleAddressUpload}
-            className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer"
-          />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
-        <label className="block">
-          Lat/Lon CSV
+        <label className="block text-md font-medium sm:w-1/2">
+          <span className="flex justify-between">
+            Lat/Long CSV
+            {isLatLonLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
+            )}
+          </span>
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx"
             onChange={handleLatLonUpload}
-            className="mt-1 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-xl file:bg-slate-200 hover:file:bg-slate-300 cursor-pointer"
-          />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
       </div>
       <GoogleMap
