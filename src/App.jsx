@@ -8,16 +8,7 @@ const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "95vw", height: "700px" };
-
-// Custom map styling
-const MAP_STYLE = [
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-  { featureType: "administrative", stylers: [{ visibility: "off" }] },
-  { stylers: [{ saturation: -50 }, { lightness: 20 }] },
-];
+const containerStyle = { width: "100%", height: "500px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -59,7 +50,7 @@ export default function ActivityMapper() {
           setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setZoom(10);
         },
-        () => console.warn('Geolocation denied'),
+        () => console.warn('User denied geolocation'),
         { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
       );
     }
@@ -210,7 +201,7 @@ export default function ActivityMapper() {
         mapContainerStyle={containerStyle}
         center={center}
         zoom={zoom}
-        options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID, styles: MAP_STYLE }}
+        options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
       >
         {activityMarkers.map((m, i) => (
           <Marker
