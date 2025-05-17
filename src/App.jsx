@@ -1,5 +1,5 @@
 // ActivityMapper.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -35,6 +35,8 @@ export default function ActivityMapper() {
   const [selectedHome, setSelectedHome] = useState(null);
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
   const [zoom, setZoom] = useState(2);
+  const mapRef = useRef(null);
+
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -42,6 +44,19 @@ export default function ActivityMapper() {
     mapIds: [MAP_ID],
   });
 
+  // auto-fit to markers
+  useEffect(() => {
+    const pts = [
+      ...activityMarkers.map(m => ({ lat: m.lat, lng: m.lng })),
+      ...homeMarkers.map(h => ({ lat: h.lat, lng: h.lng })),
+    ];
+    if (mapRef.current && pts.length) {
+      const bounds = new window.google.maps.LatLngBounds();
+      pts.forEach(p => bounds.extend(p));
+      mapRef.current.fitBounds(bounds);
+    }
+  }, [activityMarkers, homeMarkers]);
+  
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -221,6 +236,7 @@ export default function ActivityMapper() {
         mapContainerStyle={containerStyle}
         center={center}
         zoom={zoom}
+        onLoad={map => (mapRef.current = map)}
         options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
       >
         {activityMarkers.map((m, i) => (
