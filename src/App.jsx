@@ -35,7 +35,6 @@ export default function ActivityMapper() {
   const [selectedHome, setSelectedHome] = useState(null);
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
   const [zoom, setZoom] = useState(2);
-
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -73,9 +72,12 @@ export default function ActivityMapper() {
           })
           .filter(Boolean);
         setActivityMarkers(coords);
-        if (coords.length) { setCenter(coords[0]); setZoom(10); }
+        if (coords.length) {
+          setCenter(coords[0]);
+          setZoom(10);
+        }
         setIsLatLonLoading(false);
-      }
+      },
     });
   };
 
@@ -182,19 +184,37 @@ export default function ActivityMapper() {
       <div className="flex flex-col gap-5 sm:flex-row pb-5">
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
-            Address CSV{isAddressLoading && (
-              <span className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full" />
+            Address CSV
+            {isAddressLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
             )}
           </span>
-          <input type="file" accept=".csv,.xlsx" onChange={handleAddressUpload} />
+          <input
+            type="file"
+            accept=".csv,.xlsx"
+            onChange={handleAddressUpload}
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
-            Lat/Long CSV{isLatLonLoading && (
-              <span className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full" />
+            Lat/Long CSV
+            {isLatLonLoading && (
+              <span
+                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                role="status"
+                aria-label="loading"
+              ></span>
             )}
           </span>
-          <input type="file" accept=".csv" onChange={handleLatLonUpload} />
+          <input
+            type="file"
+            accept=".csv,.xlsx"
+            onChange={handleLatLonUpload}
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
       </div>
       <GoogleMap
@@ -269,10 +289,7 @@ export default function ActivityMapper() {
           <span>Address</span>
         </div>
       </div>
-      <button
-        onClick={handleExport}
-        className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
-      >
+      <button onClick={handleExport} className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
         Export map PNG
       </button>
     </div>
