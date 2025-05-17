@@ -25,7 +25,7 @@ const ACTIVITY_LABELS = {
 };
 
 const ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons";
-const HOME_ICON_URL = "/icons/home.png";
+const HOME_ICON_URL = `${ICON_BASE_URL}/home.png`;
 
 export default function MapUploaderApp() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
