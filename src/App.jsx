@@ -1,4 +1,4 @@
-// MapUploaderApp.jsx — Simplified and Fixed
+// ActivityMapper.jsx
 import React, { useState, useEffect } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
@@ -8,7 +8,7 @@ const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "95vw", height: "700px" };
+const containerStyle = { width: "100%", height: "500px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -49,7 +49,9 @@ export default function MapUploaderApp() {
           setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setZoom(10);
         },
-        () => {},
+        () => {
+          console.warn("User denied goalocation");
+        },
         { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
       );
     }
@@ -186,9 +188,7 @@ export default function MapUploaderApp() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">
-        Activity Mapper
-      </h1>
+      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
       <div className="flex flex-col gap-5 sm:flex-row pb-5">
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
@@ -205,8 +205,7 @@ export default function MapUploaderApp() {
             type="file"
             accept=".csv,.xlsx"
             onChange={handleAddressUpload}
-            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400"
-          />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
         <label className="block text-md font-medium sm:w-1/2">
           <span className="flex justify-between">
@@ -223,8 +222,7 @@ export default function MapUploaderApp() {
             type="file"
             accept=".csv"
             onChange={handleLatLonUpload}
-            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400"
-          />
+            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
       </div>
       <GoogleMap
@@ -277,8 +275,7 @@ export default function MapUploaderApp() {
       </div>
       <button
         onClick={handleExport}
-        className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
-      >
+        className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
         Export map PNG
       </button>
     </div>
