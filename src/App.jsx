@@ -220,7 +220,7 @@ export default function MapUploaderApp() {
           </span>
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx"
             onChange={handleLatLonUpload}
             className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
