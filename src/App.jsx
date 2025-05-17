@@ -50,7 +50,7 @@ export default function MapUploaderApp() {
           setZoom(10);
         },
         () => {
-          console.warn("User denied goalocation");
+          console.warn("User denied geolocation");
         },
         { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
       );
@@ -273,8 +273,7 @@ export default function MapUploaderApp() {
           <span>Address</span>
         </div>
       </div>
-      <button
-        onClick={handleExport}
+      <button onClick={handleExport}
         className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
         Export map PNG
       </button>
