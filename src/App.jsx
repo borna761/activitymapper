@@ -1,20 +1,14 @@
 // ActivityMapper.jsx
-import React, { useState, useEffect, useRef } from "react";
-import { GoogleMap, useJsApiLoader } from "@react-google-maps/api";
+import React, { useState, useEffect } from "react";
+import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
-const GOOGLE_MAP_LIBRARIES = ["places", "marker"];
+const GOOGLE_MAP_LIBRARIES = ["places"];
 
 const containerStyle = { width: "100%", height: "500px" };
-
-const ICON_PATHS = {
-  CC: "M12 3C10.9 3 10 3.9 10 5C10 5.73 10.41 6.38 11 6.72V7H8.5C7.95 7 7.5 7.45 7.5 8V9.25L6.5 10.25L5 9.5V7C5 5.9 4.11 5 3 5C1.9 5 1 5.9 1 7C1 8.1 1.9 9 3 9H4V10.93C4 11.62 4.29 12.28 4.8 12.75L6.6 14.4C6.21 14.9 6 15.5 6 16.12V21H18V16.12C18 15.5 17.79 14.9 17.4 14.4L19.2 12.75C19.71 12.28 20 11.62 20 10.93V9H21C22.1 9 23 8.1 23 7C23 5.9 22.1 5 21 5C19.9 5 19 5.9 19 7V9.5L17.5 10.25L16.5 9.25V8C16.5 7.45 16.05 7 15.5 7H13V6.72C13.59 6.38 14 5.73 14 5C14 3.9 13.11 3 12 3Z",
-  DM: "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
-  JY: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z",
-  SC: "M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z",
-};
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -30,17 +24,16 @@ const ACTIVITY_LABELS = {
   SC: "Study Circle",
 };
 
-const HOME_ICON_URL = "/icons/home.png";
+const ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons";
+const HOME_ICON_URL = `${ICON_BASE_URL}/home.png`;
 
 export default function MapUploaderApp() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
   const [isLatLonLoading, setIsLatLonLoading] = useState(false);
-
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     libraries: GOOGLE_MAP_LIBRARIES,
-    version: "weekly",
     mapIds: [MAP_ID],
   });
 
@@ -48,8 +41,6 @@ export default function MapUploaderApp() {
   const [homeMarkers, setHomeMarkers] = useState([]);
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
   const [zoom, setZoom] = useState(2);
-  const mapRef = useRef(null);
-  const markerRef = useRef([]);
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -74,12 +65,16 @@ export default function MapUploaderApp() {
       header: true,
       skipEmptyLines: true,
       complete: ({ data }) => {
-        const coords = data.map(row => {
-          const lat = parseFloat(row.latitude || row.lat || row.Latitude);
-          const lng = parseFloat(row.longitude || row.lon || row.lng || row.Longitude);
-          const activity = (row.activity || row.type || row.Type || "").trim().toUpperCase();
-          return !isNaN(lat) && !isNaN(lng) ? { lat, lng, activity } : null;
-        }).filter(Boolean);
+        const coords = data
+          .map((row) => {
+            const lat = parseFloat(row.latitude || row.lat || row.Latitude);
+            const lng = parseFloat(row.longitude || row.lon || row.lng || row.Longitude);
+            const activity = (row.activity || row.type || row.Type || "").trim().toUpperCase();
+            return !isNaN(lat) && !isNaN(lng)
+              ? { lat, lng, activity }
+              : null;
+          })
+          .filter(Boolean);
         setActivityMarkers(coords);
         if (coords.length) {
           setCenter(coords[0]);
@@ -94,63 +89,63 @@ export default function MapUploaderApp() {
     const file = e.target.files[0];
     if (!file) return;
     setIsAddressLoading(true);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async ({ data }) => {
+
+    const processResults = (results) => {
+      const deduped = Array.from(
+        new Map(results.map((p) => [`${p.lat},${p.lng}`, p])).values()
+      );
+      setHomeMarkers(deduped);
+      if (deduped.length) {
+        setCenter(deduped[0]);
+        setZoom(10);
+      }
+      setIsAddressLoading(false);
+    };
+
+    if (file.name.endsWith(".xlsx")) {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const parsed = XLSX.utils.sheet_to_json(sheet);
         const geocoder = new window.google.maps.Geocoder();
         const results = [];
-        for (const row of data) {
-          const address = row.address || row.Address || row.addr || row.Addr;
+        for (let row of parsed) {
+          const address = row.address || row.Address || row.addr;
           if (!address) continue;
           const pt = await new Promise((resolve) => {
             geocoder.geocode({ address }, (out, status) => {
-              if (status === "OK" && out[0]) resolve(out[0].geometry.location.toJSON());
-              else resolve(null);
+              resolve(status === "OK" && out[0] ? out[0].geometry.location.toJSON() : null);
             });
           });
           if (pt) results.push(pt);
         }
-        setHomeMarkers(results);
-        if (results.length) {
-          setCenter(results[0]);
-          setZoom(10);
-        }
-        setIsAddressLoading(false);
-      },
-    });
-  };
-
-  useEffect(() => {
-    if (!mapRef.current || !window.google?.maps?.marker?.AdvancedMarkerElement) return;
-    markerRef.current.forEach(m => m.map = null);
-    markerRef.current = [];
-    if (!window.google?.maps?.marker?.AdvancedMarkerElement) {
-      console.error("AdvancedMarkerElement is not available");
-      return;
+        processResults(results);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async ({ data }) => {
+          const geocoder = new window.google.maps.Geocoder();
+          const results = [];
+          for (let row of data) {
+            const address = row.address || row.Address || row.addr;
+            if (!address) continue;
+            const pt = await new Promise((resolve) => {
+              geocoder.geocode({ address }, (out, status) => {
+                resolve(status === "OK" && out[0] ? out[0].geometry.location.toJSON() : null);
+              });
+            });
+            if (pt) results.push(pt);
+          }
+          processResults(results);
+        },
+      });
     }
-    const AdvancedMarkerElement = window.google.maps.marker.AdvancedMarkerElement;
-    const newMarkers = [];
-    activityMarkers.forEach((m) => {
-      const path = ICON_PATHS[m.activity];
-      if (!path) {
-        console.warn("Unknown activity type:", m.activity);
-        return;
-      }
-      const icon = document.createElement("div");
-      icon.innerHTML = `<svg width='32' height='32' viewBox='0 0 24 24' fill='${ICON_COLORS[m.activity] || 'gray'}' stroke='white' stroke-width='1'><path d='${path}'/></svg>`;
-      const marker = new AdvancedMarkerElement({ position: { lat: m.lat, lng: m.lng }, map: mapRef.current, content: icon });
-      newMarkers.push(marker);
-    });
-    homeMarkers.forEach((pos) => {
-      const icon = document.createElement("img");
-      icon.src = HOME_ICON_URL;
-      icon.style.width = "24px";
-      const marker = new AdvancedMarkerElement({ position: pos, map: mapRef.current, content: icon });
-      newMarkers.push(marker);
-    });
-    markerRef.current = newMarkers;
-  }, [activityMarkers, homeMarkers]);
+  };
 
   const handleExport = async () => {
     const base = "https://maps.googleapis.com/maps/api/staticmap";
@@ -163,28 +158,30 @@ export default function MapUploaderApp() {
       "feature:administrative|visibility:off",
       "saturation:-50",
       "lightness:20",
-    ].map(s => `style=${encodeURIComponent(s)}`).join("&");
+    ]
+      .map((s) => `style=${encodeURIComponent(s)}`)
+      .join("&");
 
-    const validActivity = activityMarkers.filter(m => ICON_PATHS[m.activity]);
-    const markerStrings = validActivity.map(m =>
-      `markers=icon:/icons/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
+    const validActivity = activityMarkers.filter(
+      (m) => m.activity && ICON_COLORS[m.activity]
     );
-
-    const homeGroup = homeMarkers.map(p =>
-      `markers=icon:${HOME_ICON_URL}|${p.lat},${p.lng}`
+    const markerStrings = validActivity.map(
+      (m) =>
+        `markers=icon:${ICON_BASE_URL}/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
     );
-
-    const url = `${base}?key=${GOOGLE_MAPS_KEY}&size=${size}&scale=${scale}&${style}&${[...markerStrings, ...homeGroup].join("&")}`;
-
+    const homeGroup = homeMarkers.map(
+      (p) => `markers=icon:${HOME_ICON_URL}|${p.lat},${p.lng}`
+    );
+    const url = `${base}?key=${GOOGLE_MAPS_KEY}&size=${size}&scale=${scale}&${style}&${[
+      ...markerStrings,
+      ...homeGroup,
+    ].join("&")}`;
     const res = await fetch(url);
     const blob = await res.blob();
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    const date = new Date().toISOString().split("T")[0];
-    link.download = `activity-map-${date}.png`;
-    document.body.appendChild(link);
+    link.download = `activity-map-${new Date().toISOString().split("T")[0]}.png`;
     link.click();
-    document.body.removeChild(link);
   };
 
   if (!isLoaded) return <div>Loading map...</div>;
@@ -206,7 +203,7 @@ export default function MapUploaderApp() {
           </span>
           <input
             type="file"
-            accept=".csv"
+            accept=".csv,.xlsx"
             onChange={handleAddressUpload}
             className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
@@ -233,17 +230,41 @@ export default function MapUploaderApp() {
         center={center}
         zoom={zoom}
         options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
-        onLoad={(map) => {
-          mapRef.current = map;
-        }}
       >
+        {activityMarkers.map((m, idx) => (
+          <Marker
+            key={`act-${idx}`}
+            position={{ lat: m.lat, lng: m.lng }}
+            icon={{
+              url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
+              size: new window.google.maps.Size(16, 16),
+              scaledSize: new window.google.maps.Size(16, 16),
+              anchor: new window.google.maps.Point(8, 8),
+            }}
+          />
+        ))}
+        {homeMarkers.map((p, idx) => (
+          <Marker
+            key={`home-${idx}`}
+            position={p}
+            icon={{
+              url: HOME_ICON_URL,
+              size: new window.google.maps.Size(12, 12),
+              scaledSize: new window.google.maps.Size(12, 12),
+              anchor: new window.google.maps.Point(6, 6),
+            }}
+            onClick={() => setHomeMarkers((prev) => prev.filter((_, i) => i !== idx))}
+          />
+        ))}
       </GoogleMap>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 text-sm">
         {Object.entries(ICON_COLORS).map(([key, color]) => (
           <div key={key} className="flex items-center space-x-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={color} stroke="white" strokeWidth="1">
-              <path d={ICON_PATHS[key]} />
-            </svg>
+            <img
+              src={`${ICON_BASE_URL}/${key.toLowerCase()}.png`}
+              alt={key}
+              className="w-4 h-4"
+            />
             <span>{ACTIVITY_LABELS[key]}</span>
           </div>
         ))}
