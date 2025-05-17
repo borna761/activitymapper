@@ -273,8 +273,7 @@ export default function MapUploaderApp() {
           <span>Address</span>
         </div>
       </div>
-      <button onClick={handleExport}
-        className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
+      <button onClick={handleExport} className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
         Export map PNG
       </button>
     </div>
