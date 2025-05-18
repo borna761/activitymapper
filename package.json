@@ -12,7 +12,6 @@
   "dependencies": {
     "@react-google-maps/api": "^2.20.6",
     "limiter": "^3.0.0",
-    "node-rate-limiter": "^1.0.1",
     "papaparse": "^5.5.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
