@@ -141,7 +141,6 @@ export default function ActivityMapper() {
   }
 
 const geocodeRows = async (rows) => {
-  // dedupe rows by multiple fields
   const uniqueRows = Array.from(
     new Map(
       rows.map(r => {
@@ -150,32 +149,23 @@ const geocodeRows = async (rows) => {
         const locality = r['Locality'] || '';
         const focus = r['Focus Neighbourhood'] || '';
         const addressField = r['Address'] || '';
-        const key = `${community}|${region}|${locality}|${focus}|${addressField}`;
+        const key = `${addressField}|${focus}|${locality}|${region}|${community}`;
         return [key, r];
       })
     ).values()
   );
   const out = [];
   for (const row of uniqueRows) {
-    const community = row['National Community'] || '';
-    const region = row['Region'] || '';
-    const locality = row['Locality'] || '';
-    const focus = row['Focus Neighbourhood'] || '';
-    const addressField = row['Address'] || '';
-    const query = [community, region, locality, focus, addressField]
-      .filter(Boolean)
-      .join(', ');
+    const query = [
+      row['Address'] || '',
+      row['Focus Neighbourhood'] || '',
+      row['Locality'] || '',
+      row['Region'] || '',
+      row['National Community'] || ''
+    ].filter(Boolean).join(', ');
+    console.log(query);
     const result = await geocodeAddress(query);
-    if (result) {
-      out.push({
-        ...result,
-        community,
-        region,
-        locality,
-        focusNeighbourhood: focus,
-        address: addressField,
-      });
-    }
+    if (result) out.push({ ...result, ...row });
   }
   processResults(out);
 };
