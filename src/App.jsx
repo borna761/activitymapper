@@ -3,9 +3,11 @@ import React, { useState, useEffect, useRef } from "react";
 import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { RateLimiter } from "limiter";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
 const containerStyle = { width: "100%", height: "500px" };
@@ -36,6 +38,9 @@ export default function ActivityMapper() {
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
   const [zoom, setZoom] = useState(2);
   const mapRef = useRef(null);
+
+  const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -96,69 +101,86 @@ export default function ActivityMapper() {
     });
   };
 
-  const handleAddressUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const geocodeAddress = async (addr) => {
+    const remainingMessages = await limiter.removeTokens(1);
+    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(addr)}&proximity=ip&access_token=${MAPBOX_TOKEN}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.features && data.features[0]) {
+      const [lng, lat] = data.features[0].geometry.coordinates;
+      return { lat, lng, address: addr };
+    }
+    return null;
+  };
+
+  const handleAddressUpload = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
     setIsAddressLoading(true);
 
-    const processResults = (results) => {
-      const deduped = Array.from(
-        new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values()
-      );
+    const process = (results) => {
+      const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
       setHomeMarkers(deduped);
       if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
       setIsAddressLoading(false);
     };
 
+    let rows = [];
     if (file.name.endsWith('.xlsx')) {
       const reader = new FileReader();
-      reader.onload = async (ev) => {
+      reader.onload = (ev) => {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        const geocoder = new window.google.maps.Geocoder();
-        const results = [];
-        for (const row of rows) {
-          const addr = row.address || row.Address || row.addr;
-          if (!addr) continue;
-          const pt = await new Promise(res =>
-            geocoder.geocode({ address: addr }, (out, status) =>
-              res(status === 'OK' && out[0]
-                ? { ...out[0].geometry.location.toJSON(), address: addr }
-                : null
-              )
-            )
-          );
-          if (pt) results.push(pt);
-        }
-        processResults(results);
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        geocodeRows(rows);
       };
       reader.readAsArrayBuffer(file);
     } else {
       Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: async ({ data }) => {
-          const geocoder = new window.google.maps.Geocoder();
-          const results = [];
-          for (const row of data) {
-            const addr = row.address || row.Address || row.addr;
-            if (!addr) continue;
-            const pt = await new Promise(res =>
-              geocoder.geocode({ address: addr }, (out, status) =>
-                res(status === 'OK' && out[0]
-                  ? { ...out[0].geometry.location.toJSON(), address: addr }
-                  : null
-                )
-              )
-            );
-            if (pt) results.push(pt);
-          }
-          processResults(results);
+        header: true, skipEmptyLines: true,
+        complete: ({ data }) => {
+          rows = data;
+          geocodeRows(rows);
         }
       });
     }
+  }
+
+const geocodeRows = async (rows) => {
+  const uniqueRows = Array.from(
+    new Map(
+      rows.map(r => {
+        const community = r['National Community'] || '';
+        const region = r['Region'] || '';
+        const locality = r['Locality'] || '';
+        const focus = r['Focus Neighbourhood'] || '';
+        const addressField = r['Address'] || '';
+        const key = `${addressField}|${focus}|${locality}|${region}|${community}`;
+        return [key, r];
+      })
+    ).values()
+  );
+  const out = [];
+  for (const row of uniqueRows) {
+    const query = [
+      row['Address'] || '',
+      row['Focus Neighbourhood'] || '',
+      row['Locality'] || '',
+      row['Region'] || '',
+      row['National Community'] || ''
+    ].filter(Boolean).join(', ');
+    const result = await geocodeAddress(query);
+    if (result) out.push({ ...result, ...row });
+  }
+  processResults(out);
+};
+
+  const processResults = results => {
+    const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
+    setHomeMarkers(deduped);
+    if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
+    setIsAddressLoading(false);
   };
+
 
   const handleExport = async () => {
     const base = 'https://maps.googleapis.com/maps/api/staticmap';
