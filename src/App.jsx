@@ -4,7 +4,6 @@ import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from "@react-google-map
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
