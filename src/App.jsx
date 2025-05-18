@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { RateLimiter } from "limiter";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
@@ -37,6 +38,9 @@ export default function ActivityMapper() {
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
   const [zoom, setZoom] = useState(2);
   const mapRef = useRef(null);
+
+  const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -98,6 +102,7 @@ export default function ActivityMapper() {
   };
 
   const geocodeAddress = async (addr) => {
+    const remainingMessages = await limiter.removeTokens(1);
     const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(addr)}&proximity=ip&access_token=${MAPBOX_TOKEN}`;
     const res = await fetch(url);
     const data = await res.json();
@@ -163,7 +168,6 @@ const geocodeRows = async (rows) => {
       row['Region'] || '',
       row['National Community'] || ''
     ].filter(Boolean).join(', ');
-    console.log(query);
     const result = await geocodeAddress(query);
     if (result) out.push({ ...result, ...row });
   }
