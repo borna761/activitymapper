@@ -281,38 +281,6 @@ const geocodeRows = async (rows) => {
     setIsAddressLoading(false);
   };
 
-
-  const handleExport = async () => {
-    const base = 'https://maps.googleapis.com/maps/api/staticmap';
-    const size = '4000x1200';
-    const style = [
-      'feature:poi|visibility:off',
-      'feature:road|element:labels|visibility:off',
-      'feature:transit|visibility:off',
-      'feature:administrative|visibility:off',
-      'saturation:-50',
-      'lightness:20',
-    ]
-      .map(s => `style=${encodeURIComponent(s)}`)
-      .join('&');
-    const actParams = activityMarkers.map(m =>
-      `markers=icon:${ICON_BASE_URL}/${m.activity.toLowerCase()}.png|${m.lat},${m.lng}`
-    );
-    const homeParams = homeMarkers.map(p =>
-      `markers=icon:${HOME_ICON_URL}|${p.lat},${p.lng}`
-    );
-    const url = `${base}?key=${GOOGLE_MAPS_KEY}&size=${size}&scale=2&${style}&${[
-      ...actParams,
-      ...homeParams,
-    ].join('&')}`;
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `activity-map-${new Date().toISOString().split('T')[0]}.png`;
-    link.click();
-  };
-
   if (!isLoaded) return <div>Loading map...</div>;
 
   return (
@@ -448,9 +416,6 @@ const geocodeRows = async (rows) => {
             <span>Address</span>
           </div>
         </div>
-        <button onClick={handleExport} className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
-          Export map PNG
-        </button>
       </div>
     </div>
   );
