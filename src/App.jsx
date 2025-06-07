@@ -372,7 +372,7 @@ const geocodeRows = async (rows) => {
               scaledSize: new window.google.maps.Size(16, 16),
               anchor: new window.google.maps.Point(8, 8),
             }}
-            onClick={() => setSelectedActivity(m)}
+            onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
           />
         ))}
         {homeMarkers.map((p, i) => (
@@ -385,7 +385,7 @@ const geocodeRows = async (rows) => {
               scaledSize: new window.google.maps.Size(12, 12),
               anchor: new window.google.maps.Point(6, 6),
             }}
-            onClick={() => setSelectedHome(p)}
+            onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
           />
         ))}
         {selectedActivity && (
