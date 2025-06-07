@@ -10,7 +10,7 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "100%", height: "500px" };
+const containerStyle = { width: "1400px", height: "800px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -316,10 +316,10 @@ const geocodeRows = async (rows) => {
   if (!isLoaded) return <div>Loading map...</div>;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-6 max-w-[1500px] mx-auto">
       <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
-      <div className="flex flex-col gap-5 sm:flex-row pb-5">
-        <label className="block text-md font-medium sm:w-1/2">
+      <div className="flex flex-col gap-5 sm:flex-row pb-5 w-full max-w-[1400px] mx-auto justify-start items-center gap-10">
+        <label className="block text-md font-medium max-w-md w-full">
           <span className="flex justify-between">
             Individiuals CSV/XLSX
             {isAddressLoading && (
@@ -336,7 +336,7 @@ const geocodeRows = async (rows) => {
             onChange={handleAddressUpload}
             className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
         </label>
-        <label className="block text-md font-medium sm:w-1/2">
+        <label className="block text-md font-medium max-w-md w-full">
           <span className="flex justify-between">
             Activities CSV/XLSX
             {isLatLonLoading && (
