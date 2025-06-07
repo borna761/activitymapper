@@ -316,140 +316,142 @@ const geocodeRows = async (rows) => {
   if (!isLoaded) return <div>Loading map...</div>;
 
   return (
-    <div className="p-6 max-w-[1500px] mx-auto">
-      <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
-      <div className="flex flex-col gap-5 sm:flex-row pb-5 w-full max-w-[1400px] mx-auto justify-start items-center gap-10">
-        <label className="block text-md font-medium max-w-md w-full">
-          <span className="flex justify-between">
-            Individiuals CSV/XLSX
-            {isAddressLoading && (
-              <span
-                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
-                role="status"
-                aria-label="loading"
-              ></span>
-            )}
-          </span>
-          <input
-            type="file"
-            accept=".csv,.xlsx"
-            onChange={handleAddressUpload}
-            className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
-        </label>
-        <label className="block text-md font-medium max-w-md w-full">
-          <span className="flex justify-between">
-            Activities CSV/XLSX
-            {isLatLonLoading && (
-              <span
-                className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
-                role="status"
-                aria-label="loading"
-              ></span>
-            )}
-          </span>
-          <input
-            type="file"
-            accept=".csv,.xlsx"
-            onChange={handleLatLonUpload}
-            disabled={homeMarkers.length === 0}
-            className={`block w-full mt-2 border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400 ${homeMarkers.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} />
-        </label>
-      </div>
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={center}
-        zoom={zoom}
-        onLoad={map => (mapRef.current = map)}
-        options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
-      >
-        {activityMarkers.map((m, i) => (
-          <Marker
-            key={i}
-            position={{ lat: m.lat, lng: m.lng }}
-            icon={{
-              url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
-              size: new window.google.maps.Size(16, 16),
-              scaledSize: new window.google.maps.Size(16, 16),
-              anchor: new window.google.maps.Point(8, 8),
-            }}
-            onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
-          />
-        ))}
-        {homeMarkers.map((p, i) => (
-          <Marker
-            key={i}
-            position={{ lat: p.lat, lng: p.lng }}
-            icon={{
-              url: HOME_ICON_URL,
-              size: new window.google.maps.Size(12, 12),
-              scaledSize: new window.google.maps.Size(12, 12),
-              anchor: new window.google.maps.Point(6, 6),
-            }}
-            onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
-          />
-        ))}
-        {selectedActivity && (
-          <InfoWindow
-            position={{ lat: selectedActivity.lat, lng: selectedActivity.lng }}
-            onCloseClick={() => setSelectedActivity(null)}
-          >
-            <div className="pt-0 px-2 pb-2 min-w-[200px]">
-              <p className="mb-2 text-sm">
-                <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
-                <br />
-                <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
-                <br />
-                <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
-              </p>
-            </div>
-          </InfoWindow>
-        )}
-        {selectedHome && (
-          <InfoWindow
-            position={{ lat: selectedHome.lat, lng: selectedHome.lng }}
-            onCloseClick={() => setSelectedHome(null)}
-          >
-            <div className="pt-0 px-2 pb-2 min-w-[200px]">
-              <p className="mb-2 text-sm">
-                {selectedHome.address}
-              </p>
-              <div className="flex justify-end">
-                <button
-                  onClick={() => {
-                    setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
-                    setSelectedHome(null);
-                  }}
-                  className="px-2 py-1 bg-red-600 text-white text-xs rounded"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </InfoWindow>
-        )}
-      </GoogleMap>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 text-sm">
-        {Object.entries(ICON_COLORS).map(([key]) => (
-          <div key={key} className="flex items-center space-x-2">
-            <img
-              src={`${ICON_BASE_URL}/${key.toLowerCase()}.png`}
-              alt={key}
-              className="w-4 h-4"
-            />
-            <span>{ACTIVITY_LABELS[key]}</span>
-          </div>
-        ))}
-        <div className="flex items-center space-x-2">
-          <img
-            src={HOME_ICON_URL}
-            alt="Address"
-            className="w-4 h-4" />
-          <span>Address</span>
+    <div className="p-6">
+      <div className="max-w-[1400px] mx-auto">
+        <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+        <div className="flex flex-col gap-5 sm:flex-row pb-5 w-full justify-start items-start gap-10">
+          <label className="block text-md font-medium">
+            <span className="flex justify-between">
+              Individuals CSV/XLSX
+              {isAddressLoading && (
+                <span
+                  className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                  role="status"
+                  aria-label="loading"
+                ></span>
+              )}
+            </span>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={handleAddressUpload}
+              className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+          </label>
+          <label className="block text-md font-medium">
+            <span className="flex justify-between">
+              Activities CSV/XLSX
+              {isLatLonLoading && (
+                <span
+                  className="animate-spin inline-block size-6 border-4 border-current border-t-transparent text-indigo-600 rounded-full"
+                  role="status"
+                  aria-label="loading"
+                ></span>
+              )}
+            </span>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={handleLatLonUpload}
+              disabled={homeMarkers.length === 0}
+              className={`block w-full mt-2 border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400 ${homeMarkers.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} />
+          </label>
         </div>
+        <GoogleMap
+          mapContainerStyle={containerStyle}
+          center={center}
+          zoom={zoom}
+          onLoad={map => (mapRef.current = map)}
+          options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
+        >
+          {activityMarkers.map((m, i) => (
+            <Marker
+              key={i}
+              position={{ lat: m.lat, lng: m.lng }}
+              icon={{
+                url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
+                size: new window.google.maps.Size(16, 16),
+                scaledSize: new window.google.maps.Size(16, 16),
+                anchor: new window.google.maps.Point(8, 8),
+              }}
+              onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
+            />
+          ))}
+          {homeMarkers.map((p, i) => (
+            <Marker
+              key={i}
+              position={{ lat: p.lat, lng: p.lng }}
+              icon={{
+                url: HOME_ICON_URL,
+                size: new window.google.maps.Size(12, 12),
+                scaledSize: new window.google.maps.Size(12, 12),
+                anchor: new window.google.maps.Point(6, 6),
+              }}
+              onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
+            />
+          ))}
+          {selectedActivity && (
+            <InfoWindow
+              position={{ lat: selectedActivity.lat, lng: selectedActivity.lng }}
+              onCloseClick={() => setSelectedActivity(null)}
+            >
+              <div className="pt-0 px-2 pb-2 min-w-[200px]">
+                <p className="mb-2 text-sm">
+                  <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
+                  <br />
+                  <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
+                  <br />
+                  <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
+                </p>
+              </div>
+            </InfoWindow>
+          )}
+          {selectedHome && (
+            <InfoWindow
+              position={{ lat: selectedHome.lat, lng: selectedHome.lng }}
+              onCloseClick={() => setSelectedHome(null)}
+            >
+              <div className="pt-0 px-2 pb-2 min-w-[200px]">
+                <p className="mb-2 text-sm">
+                  {selectedHome.address}
+                </p>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => {
+                      setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
+                      setSelectedHome(null);
+                    }}
+                    className="px-2 py-1 bg-red-600 text-white text-xs rounded"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </InfoWindow>
+          )}
+        </GoogleMap>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 text-sm">
+          {Object.entries(ICON_COLORS).map(([key]) => (
+            <div key={key} className="flex items-center space-x-2">
+              <img
+                src={`${ICON_BASE_URL}/${key.toLowerCase()}.png`}
+                alt={key}
+                className="w-4 h-4"
+              />
+              <span>{ACTIVITY_LABELS[key]}</span>
+            </div>
+          ))}
+          <div className="flex items-center space-x-2">
+            <img
+              src={HOME_ICON_URL}
+              alt="Address"
+              className="w-4 h-4" />
+            <span>Address</span>
+          </div>
+        </div>
+        <button onClick={handleExport} className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
+          Export map PNG
+        </button>
       </div>
-      <button onClick={handleExport} className="mt-4 px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
-        Export map PNG
-      </button>
     </div>
   );
 }
