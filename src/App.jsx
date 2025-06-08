@@ -10,7 +10,7 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "1400px", height: "800px" };
+const containerStyle = { width: "1400px", height: "900px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -51,6 +51,23 @@ const getShortActivityName = name => {
   const idx = name.indexOf(',');
   return idx === -1 ? name : name.slice(0, idx);
 };
+
+// Helper to sort by activity type, then activity name, then facilitator
+function sortActivities(a, b) {
+  const typeA = (a['Activity Type'] || '').toLowerCase();
+  const typeB = (b['Activity Type'] || '').toLowerCase();
+  if (typeA < typeB) return -1;
+  if (typeA > typeB) return 1;
+  const nameA = getShortActivityName(a['Name'] || a['name'] || '').toLowerCase();
+  const nameB = getShortActivityName(b['Name'] || b['name'] || '').toLowerCase();
+  if (nameA < nameB) return -1;
+  if (nameA > nameB) return 1;
+  const facA = (a['Facilitators'] || '').toLowerCase();
+  const facB = (b['Facilitators'] || '').toLowerCase();
+  if (facA < facB) return -1;
+  if (facA > facB) return 1;
+  return 0;
+}
 
 export default function ActivityMapper() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
@@ -489,10 +506,11 @@ const geocodeRows = async (rows) => {
           <div className="mt-10">
             <h2 className="text-lg font-bold mb-2">Activities with No Facilitators</h2>
             <ul className="list-disc pl-6">
-              {activitiesNoFacilitators.map((row, idx) => (
+              {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
                   {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Activity Type'] ? ` (${row['Activity Type']})` : ''}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
                 </li>
               ))}
             </ul>
@@ -503,11 +521,11 @@ const geocodeRows = async (rows) => {
           <div className="mt-8">
             <h2 className="text-lg font-bold mb-2">Activities Where Facilitator Address Not Found</h2>
             <ul className="list-disc pl-6">
-              {activitiesFacilitatorNotFound.map((row, idx) => (
+              {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
                   {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Activity Type'] ? ` (${row['Activity Type']})` : ''}
-                  {row['Facilitators'] ? ` — Facilitators: ${row['Facilitators']}` : ''}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
                 </li>
               ))}
             </ul>
