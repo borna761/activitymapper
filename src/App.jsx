@@ -57,6 +57,7 @@ export default function ActivityMapper() {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [activitiesNoFacilitators, setActivitiesNoFacilitators] = useState([]);
   const [activitiesFacilitatorNotFound, setActivitiesFacilitatorNotFound] = useState([]);
+  const [activityTypeCounts, setActivityTypeCounts] = useState({ CC: 0, DM: 0, JY: 0, SC: 0 });
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -112,6 +113,7 @@ export default function ActivityMapper() {
     setActivityMarkers([]);
     const noFacilitators = [];
     const facilitatorNotFound = [];
+    const typeCounts = { CC: 0, DM: 0, JY: 0, SC: 0 };
     const processActivities = (data) => {
       // Build a lookup for homeMarkers by normalized full name
       const homeLookup = {};
@@ -121,6 +123,8 @@ export default function ActivityMapper() {
       });
       // Group activities by facilitator
       const facilitatorActivities = {};
+      // Track unique activities by type (not per facilitator)
+      const uniqueActivityRows = new Set();
       data.forEach(row => {
         const activityTypeRaw = row['Activity Type'] || row['activity type'] || row['Type'] || row['type'] || '';
         const activityType = ACTIVITY_TYPE_MAP[activityTypeRaw.trim().toLowerCase()];
@@ -129,6 +133,12 @@ export default function ActivityMapper() {
         if (!facilitatorsRaw.trim()) {
           noFacilitators.push(row);
           return; // skip if facilitators is empty
+        }
+        // Use a unique key for each activity row (e.g., name + type + facilitators)
+        const uniqueKey = `${row['Name'] || row['name'] || ''}|${activityType}`;
+        if (!uniqueActivityRows.has(uniqueKey)) {
+          typeCounts[activityType] = (typeCounts[activityType] || 0) + 1;
+          uniqueActivityRows.add(uniqueKey);
         }
         const activityName = row['Name'] || row['name'] || '';
         let foundAny = false;
@@ -154,6 +164,8 @@ export default function ActivityMapper() {
       // Spread activities in a circle for each facilitator
       const markers = [];
       const radius = 0.00025; // degrees
+      // For counting unique activities that are actually mapped
+      const uniqueMappedActivities = {};
       Object.entries(facilitatorActivities).forEach(([normName, acts]) => {
         const base = homeLookup[normName];
         acts.forEach((act, i) => {
@@ -170,11 +182,21 @@ export default function ActivityMapper() {
             activityName: act.activityName,
             facilitators: act.facilitators,
           });
+          // Count unique activity rows by name+type
+          const uniqueKey = `${act.activityName || ''}|${act.activity}`;
+          if (!uniqueMappedActivities[act.activity]) uniqueMappedActivities[act.activity] = new Set();
+          uniqueMappedActivities[act.activity].add(uniqueKey);
         });
+      });
+      // Build counts from uniqueMappedActivities
+      const mappedTypeCounts = { CC: 0, DM: 0, JY: 0, SC: 0 };
+      Object.entries(uniqueMappedActivities).forEach(([type, set]) => {
+        mappedTypeCounts[type] = set.size;
       });
       setActivityMarkers(markers);
       setActivitiesNoFacilitators(noFacilitators);
       setActivitiesFacilitatorNotFound(facilitatorNotFound);
+      setActivityTypeCounts(mappedTypeCounts);
       if (markers.length) {
         setCenter(markers[0]);
         setZoom(10);
@@ -444,7 +466,7 @@ const geocodeRows = async (rows) => {
                 alt={key}
                 className="w-4 h-4"
               />
-              <span>{ACTIVITY_LABELS[key]}</span>
+              <span>{ACTIVITY_LABELS[key]} <span className="text-xs text-gray-500">({activityTypeCounts[key] || 0})</span></span>
             </div>
           ))}
           <div className="flex items-center space-x-2">
