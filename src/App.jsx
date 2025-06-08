@@ -10,7 +10,7 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "1400px", height: "800px" };
+const containerStyle = { width: "1400px", height: "900px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -45,6 +45,30 @@ function getPixelPosition(map, lat, lng) {
   return { left, top };
 }
 
+// Helper to get activity name before the first comma, with error handling
+const getShortActivityName = name => {
+  if (!name || typeof name !== 'string') return '[No Activity Name]';
+  const idx = name.indexOf(',');
+  return idx === -1 ? name : name.slice(0, idx);
+};
+
+// Helper to sort by activity type, then activity name, then facilitator
+function sortActivities(a, b) {
+  const typeA = (a['Activity Type'] || '').toLowerCase();
+  const typeB = (b['Activity Type'] || '').toLowerCase();
+  if (typeA < typeB) return -1;
+  if (typeA > typeB) return 1;
+  const nameA = getShortActivityName(a['Name'] || a['name'] || '').toLowerCase();
+  const nameB = getShortActivityName(b['Name'] || b['name'] || '').toLowerCase();
+  if (nameA < nameB) return -1;
+  if (nameA > nameB) return 1;
+  const facA = (a['Facilitators'] || '').toLowerCase();
+  const facB = (b['Facilitators'] || '').toLowerCase();
+  if (facA < facB) return -1;
+  if (facA > facB) return 1;
+  return 0;
+}
+
 export default function ActivityMapper() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
   const [isLatLonLoading, setIsLatLonLoading] = useState(false);
@@ -55,6 +79,9 @@ export default function ActivityMapper() {
   const [zoom, setZoom] = useState(2);
   const mapRef = useRef(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [activitiesNoFacilitators, setActivitiesNoFacilitators] = useState([]);
+  const [activitiesFacilitatorNotFound, setActivitiesFacilitatorNotFound] = useState([]);
+  const [activityTypeCounts, setActivityTypeCounts] = useState({ CC: 0, DM: 0, JY: 0, SC: 0 });
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -108,7 +135,9 @@ export default function ActivityMapper() {
     if (!file) return;
     setIsLatLonLoading(true);
     setActivityMarkers([]);
-
+    const noFacilitators = [];
+    const facilitatorNotFound = [];
+    const typeCounts = { CC: 0, DM: 0, JY: 0, SC: 0 };
     const processActivities = (data) => {
       // Build a lookup for homeMarkers by normalized full name
       const homeLookup = {};
@@ -118,13 +147,25 @@ export default function ActivityMapper() {
       });
       // Group activities by facilitator
       const facilitatorActivities = {};
+      // Track unique activities by type (not per facilitator)
+      const uniqueActivityRows = new Set();
       data.forEach(row => {
         const activityTypeRaw = row['Activity Type'] || row['activity type'] || row['Type'] || row['type'] || '';
         const activityType = ACTIVITY_TYPE_MAP[activityTypeRaw.trim().toLowerCase()];
         if (!activityType) return;
         const facilitatorsRaw = row['Facilitators'] || row['facilitators'] || '';
-        if (!facilitatorsRaw.trim()) return;
+        if (!facilitatorsRaw.trim()) {
+          noFacilitators.push(row);
+          return; // skip if facilitators is empty
+        }
+        // Use a unique key for each activity row (e.g., name + type + facilitators)
+        const uniqueKey = `${row['Name'] || row['name'] || ''}|${activityType}`;
+        if (!uniqueActivityRows.has(uniqueKey)) {
+          typeCounts[activityType] = (typeCounts[activityType] || 0) + 1;
+          uniqueActivityRows.add(uniqueKey);
+        }
         const activityName = row['Name'] || row['name'] || '';
+        let foundAny = false;
         facilitatorsRaw.split(';').forEach(name => {
           const normName = normalizeName(name);
           if (homeLookup[normName]) {
@@ -137,12 +178,18 @@ export default function ActivityMapper() {
               activityName,
               facilitators: facilitatorsRaw,
             });
+            foundAny = true;
           }
         });
+        if (!foundAny) {
+          facilitatorNotFound.push(row);
+        }
       });
       // Spread activities in a circle for each facilitator
       const markers = [];
       const radius = 0.00025; // degrees
+      // For counting unique activities that are actually mapped
+      const uniqueMappedActivities = {};
       Object.entries(facilitatorActivities).forEach(([normName, acts]) => {
         const base = homeLookup[normName];
         acts.forEach((act, i) => {
@@ -159,9 +206,21 @@ export default function ActivityMapper() {
             activityName: act.activityName,
             facilitators: act.facilitators,
           });
+          // Count unique activity rows by name+type
+          const uniqueKey = `${act.activityName || ''}|${act.activity}`;
+          if (!uniqueMappedActivities[act.activity]) uniqueMappedActivities[act.activity] = new Set();
+          uniqueMappedActivities[act.activity].add(uniqueKey);
         });
       });
+      // Build counts from uniqueMappedActivities
+      const mappedTypeCounts = { CC: 0, DM: 0, JY: 0, SC: 0 };
+      Object.entries(uniqueMappedActivities).forEach(([type, set]) => {
+        mappedTypeCounts[type] = set.size;
+      });
       setActivityMarkers(markers);
+      setActivitiesNoFacilitators(noFacilitators);
+      setActivitiesFacilitatorNotFound(facilitatorNotFound);
+      setActivityTypeCounts(mappedTypeCounts);
       if (markers.length) {
         setCenter(markers[0]);
         setZoom(10);
@@ -215,11 +274,12 @@ export default function ActivityMapper() {
     setIsAddressLoading(true);
     setHomeMarkers([]);
     setActivityMarkers([]);
+    setActivitiesNoFacilitators([]);
+    setActivitiesFacilitatorNotFound([]);
 
     const process = (results) => {
-      const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
-      setHomeMarkers(deduped);
-      if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
+      setHomeMarkers(results);
+      if (results.length) { setCenter(results[0]); setZoom(10); }
       setIsAddressLoading(false);
     };
 
@@ -291,9 +351,8 @@ const geocodeRows = async (rows) => {
 };
 
   const processResults = results => {
-    const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
-    setHomeMarkers(deduped);
-    if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
+    setHomeMarkers(results);
+    if (results.length) { setCenter(results[0]); setZoom(10); }
     setIsAddressLoading(false);
   };
 
@@ -386,7 +445,7 @@ const geocodeRows = async (rows) => {
                   <p className="mb-3 text-sm font-normal break-words">
                     <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
                     <br />
-                    <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
+                    <span>{getShortActivityName(selectedActivity.activityName) || '[No Activity Name]'}</span>
                     <br />
                     <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
                   </p>
@@ -431,7 +490,7 @@ const geocodeRows = async (rows) => {
                 alt={key}
                 className="w-4 h-4"
               />
-              <span>{ACTIVITY_LABELS[key]}</span>
+              <span>{ACTIVITY_LABELS[key]} <span className="text-xs text-gray-500">({activityTypeCounts[key] || 0})</span></span>
             </div>
           ))}
           <div className="flex items-center space-x-2">
@@ -442,6 +501,36 @@ const geocodeRows = async (rows) => {
             <span>Address</span>
           </div>
         </div>
+        {/* Activities with no facilitators */}
+        {activitiesNoFacilitators.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-lg font-bold mb-2">Activities with No Facilitators</h2>
+            <ul className="list-disc pl-6">
+              {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
+                <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {/* Activities with facilitators not found */}
+        {activitiesFacilitatorNotFound.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold mb-2">Activities Where Facilitator Address Not Found</h2>
+            <ul className="list-disc pl-6">
+              {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
+                <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
