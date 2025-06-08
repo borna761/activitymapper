@@ -232,9 +232,8 @@ export default function ActivityMapper() {
     setActivitiesFacilitatorNotFound([]);
 
     const process = (results) => {
-      const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
-      setHomeMarkers(deduped);
-      if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
+      setHomeMarkers(results);
+      if (results.length) { setCenter(results[0]); setZoom(10); }
       setIsAddressLoading(false);
     };
 
@@ -306,9 +305,8 @@ const geocodeRows = async (rows) => {
 };
 
   const processResults = results => {
-    const deduped = Array.from(new Map(results.map(p => [`${p.lat},${p.lng}`, p])).values());
-    setHomeMarkers(deduped);
-    if (deduped.length) { setCenter(deduped[0]); setZoom(10); }
+    setHomeMarkers(results);
+    if (results.length) { setCenter(results[0]); setZoom(10); }
     setIsAddressLoading(false);
   };
 
