@@ -187,7 +187,7 @@ export default function ActivityMapper() {
       });
       // Spread activities in a circle for each facilitator
       const markers = [];
-      const radius = 0.00025; // degrees
+      const radius = 0.0005; // degrees
       // For counting unique activities that are actually mapped
       const uniqueMappedActivities = {};
       Object.entries(facilitatorActivities).forEach(([normName, acts]) => {
@@ -412,9 +412,9 @@ const geocodeRows = async (rows) => {
               position={{ lat: m.lat, lng: m.lng }}
               icon={{
                 url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
-                size: new window.google.maps.Size(16, 16),
-                scaledSize: new window.google.maps.Size(16, 16),
-                anchor: new window.google.maps.Point(8, 8),
+                size: new window.google.maps.Size(24, 24),
+                scaledSize: new window.google.maps.Size(24, 24),
+                anchor: new window.google.maps.Point(12, 12),
               }}
               onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
             />
@@ -425,9 +425,9 @@ const geocodeRows = async (rows) => {
               position={{ lat: p.lat, lng: p.lng }}
               icon={{
                 url: HOME_ICON_URL,
-                size: new window.google.maps.Size(12, 12),
-                scaledSize: new window.google.maps.Size(12, 12),
-                anchor: new window.google.maps.Point(6, 6),
+                size: new window.google.maps.Size(10, 10),
+                scaledSize: new window.google.maps.Size(10, 10),
+                anchor: new window.google.maps.Point(5, 5),
               }}
               onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
             />
