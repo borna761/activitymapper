@@ -45,6 +45,13 @@ function getPixelPosition(map, lat, lng) {
   return { left, top };
 }
 
+// Helper to get activity name before the first comma, with error handling
+const getShortActivityName = name => {
+  if (!name || typeof name !== 'string') return '[No Activity Name]';
+  const idx = name.indexOf(',');
+  return idx === -1 ? name : name.slice(0, idx);
+};
+
 export default function ActivityMapper() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
   const [isLatLonLoading, setIsLatLonLoading] = useState(false);
@@ -421,7 +428,7 @@ const geocodeRows = async (rows) => {
                   <p className="mb-3 text-sm font-normal break-words">
                     <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
                     <br />
-                    <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
+                    <span>{getShortActivityName(selectedActivity.activityName) || '[No Activity Name]'}</span>
                     <br />
                     <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
                   </p>
@@ -484,7 +491,7 @@ const geocodeRows = async (rows) => {
             <ul className="list-disc pl-6">
               {activitiesNoFacilitators.map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Name'] || row['name'] || '[No Name]'}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
                   {row['Activity Type'] ? ` (${row['Activity Type']})` : ''}
                 </li>
               ))}
@@ -498,7 +505,7 @@ const geocodeRows = async (rows) => {
             <ul className="list-disc pl-6">
               {activitiesFacilitatorNotFound.map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Name'] || row['name'] || '[No Name]'}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
                   {row['Activity Type'] ? ` (${row['Activity Type']})` : ''}
                   {row['Facilitators'] ? ` — Facilitators: ${row['Facilitators']}` : ''}
                 </li>
