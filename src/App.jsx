@@ -1,6 +1,6 @@
 // ActivityMapper.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { RateLimiter } from "limiter";
@@ -28,6 +28,22 @@ const ACTIVITY_LABELS = {
 
 const ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons";
 const HOME_ICON_URL = `${ICON_BASE_URL}/home.png`;
+
+// Helper to get pixel position from lat/lng
+function getPixelPosition(map, lat, lng) {
+  if (!map) return { left: 0, top: 0 };
+  const scale = Math.pow(2, map.getZoom());
+  const proj = map.getProjection();
+  if (!proj) return { left: 0, top: 0 };
+  const bounds = map.getBounds();
+  if (!bounds) return { left: 0, top: 0 };
+  const nw = proj.fromLatLngToPoint(bounds.getNorthEast());
+  const se = proj.fromLatLngToPoint(bounds.getSouthWest());
+  const point = proj.fromLatLngToPoint(new window.google.maps.LatLng(lat, lng));
+  const left = (point.x - se.x) * scale;
+  const top = (point.y - nw.y) * scale;
+  return { left, top };
+}
 
 export default function ActivityMapper() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
@@ -357,45 +373,55 @@ const geocodeRows = async (rows) => {
               onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
             />
           ))}
-          {selectedActivity && (
-            <InfoWindow
-              position={{ lat: selectedActivity.lat, lng: selectedActivity.lng }}
-              onCloseClick={() => setSelectedActivity(null)}
-            >
-              <div className="pt-0 px-2 pb-2 min-w-[200px]">
-                <p className="mb-2 text-sm">
-                  <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
-                  <br />
-                  <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
-                  <br />
-                  <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
-                </p>
-              </div>
-            </InfoWindow>
-          )}
-          {selectedHome && (
-            <InfoWindow
-              position={{ lat: selectedHome.lat, lng: selectedHome.lng }}
-              onCloseClick={() => setSelectedHome(null)}
-            >
-              <div className="pt-0 px-2 pb-2 min-w-[200px]">
-                <p className="mb-2 text-sm">
-                  {selectedHome.address}
-                </p>
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => {
-                      setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
-                      setSelectedHome(null);
-                    }}
-                    className="px-2 py-1 bg-red-600 text-white text-xs rounded"
-                  >
-                    Remove
-                  </button>
+          {selectedActivity && mapRef.current && (() => {
+            const { left, top } = getPixelPosition(mapRef.current, selectedActivity.lat, selectedActivity.lng);
+            return (
+              <div
+                style={{ position: 'absolute', left, top, zIndex: 1000, transform: 'translate(-50%, -100%)' }}
+              >
+                <div className="pt-0 px-4 pb-3 min-w-[200px] bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg shadow-lg">
+                  <div className="flex justify-end">
+                    <button onClick={() => setSelectedActivity(null)} className="text-xl font-bold">×</button>
+                  </div>
+                  <p className="mb-3 text-sm font-normal break-words">
+                    <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
+                    <br />
+                    <span>{selectedActivity.activityName || '[No Activity Name]'}</span>
+                    <br />
+                    <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
+                  </p>
                 </div>
               </div>
-            </InfoWindow>
-          )}
+            );
+          })()}
+          {selectedHome && mapRef.current && (() => {
+            const { left, top } = getPixelPosition(mapRef.current, selectedHome.lat, selectedHome.lng);
+            return (
+              <div
+                style={{ position: 'absolute', left, top, zIndex: 1000, transform: 'translate(-50%, -100%)' }}
+              >
+                <div className="pt-0 px-4 pb-3 min-w-[200px] bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg shadow-lg">
+                  <div className="flex justify-end">
+                    <button onClick={() => setSelectedHome(null)} className="text-xl font-bold">×</button>
+                  </div>
+                  <p className="mb-3 text-sm font-normal break-words">
+                    {selectedHome.address}
+                  </p>
+                  <div className="flex justify-end mt-2">
+                    <button
+                      onClick={() => {
+                        setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
+                        setSelectedHome(null);
+                      }}
+                      className="px-3 py-1 bg-red-600 text-white text-xs rounded shadow"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </GoogleMap>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 text-sm">
           {Object.entries(ICON_COLORS).map(([key]) => (
