@@ -534,36 +534,6 @@ const geocodeRows = async (rows) => {
             <span>Address</span>
           </div>
         </div>
-        {/* Activities with no facilitators */}
-        {activitiesNoFacilitators.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-lg font-bold mb-2">Activities with No Facilitators</h2>
-            <ul className="list-disc pl-6">
-              {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
-                <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {/* Activities with facilitators not found */}
-        {activitiesFacilitatorNotFound.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-lg font-bold mb-2">Activities Where Facilitator Address Not Found</h2>
-            <ul className="list-disc pl-6">
-              {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
-                <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
         {/* Neighborhood filter */}
         {neighborhoods.length > 0 && (
           <div className="mt-8 mb-4">
@@ -600,6 +570,36 @@ const geocodeRows = async (rows) => {
                 </label>
               ))}
             </div>
+          </div>
+        )}
+        {/* Activities with no facilitators */}
+        {activitiesNoFacilitators.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-lg font-bold mb-2">Activities with No Facilitators</h2>
+            <ul className="list-disc pl-6">
+              {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
+                <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {/* Activities with facilitators not found */}
+        {activitiesFacilitatorNotFound.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold mb-2">Activities Where Facilitator Address Not Found</h2>
+            <ul className="list-disc pl-6">
+              {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
+                <li key={idx} className="mb-1">
+                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
+                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
+                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
