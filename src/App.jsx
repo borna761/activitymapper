@@ -10,7 +10,7 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
-const containerStyle = { width: "1400px", height: "900px" };
+const containerStyle = { width: "1400px", height: "850px" };
 
 const ICON_COLORS = {
   CC: "#4CAF50",
@@ -82,6 +82,8 @@ export default function ActivityMapper() {
   const [activitiesNoFacilitators, setActivitiesNoFacilitators] = useState([]);
   const [activitiesFacilitatorNotFound, setActivitiesFacilitatorNotFound] = useState([]);
   const [activityTypeCounts, setActivityTypeCounts] = useState({ CC: 0, DM: 0, JY: 0, SC: 0 });
+  const [neighborhoods, setNeighborhoods] = useState([]);
+  const [selectedNeighborhoods, setSelectedNeighborhoods] = useState([]);
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -279,6 +281,16 @@ export default function ActivityMapper() {
 
     const process = (results) => {
       setHomeMarkers(results);
+      // Treat blank neighborhoods as 'Other'
+      const allNeighborhoodsRaw = results.map(r => {
+        const n = (r['Focus Neighbourhood'] || '').trim();
+        return n ? n : 'Other';
+      });
+      let uniqueNeighborhoods = Array.from(new Set(allNeighborhoodsRaw));
+      uniqueNeighborhoods = uniqueNeighborhoods.filter(n => n !== 'Other').sort((a, b) => a.localeCompare(b));
+      if (allNeighborhoodsRaw.includes('Other')) uniqueNeighborhoods.push('Other');
+      setNeighborhoods(uniqueNeighborhoods);
+      setSelectedNeighborhoods(uniqueNeighborhoods);
       if (results.length) { setCenter(results[0]); setZoom(10); }
       setIsAddressLoading(false);
     };
@@ -352,6 +364,16 @@ const geocodeRows = async (rows) => {
 
   const processResults = results => {
     setHomeMarkers(results);
+    // Treat blank neighborhoods as 'Other'
+    const allNeighborhoodsRaw = results.map(r => {
+      const n = (r['Focus Neighbourhood'] || '').trim();
+      return n ? n : 'Other';
+    });
+    let uniqueNeighborhoods = Array.from(new Set(allNeighborhoodsRaw));
+    uniqueNeighborhoods = uniqueNeighborhoods.filter(n => n !== 'Other').sort((a, b) => a.localeCompare(b));
+    if (allNeighborhoodsRaw.includes('Other')) uniqueNeighborhoods.push('Other');
+    setNeighborhoods(uniqueNeighborhoods);
+    setSelectedNeighborhoods(uniqueNeighborhoods);
     if (results.length) { setCenter(results[0]); setZoom(10); }
     setIsAddressLoading(false);
   };
@@ -406,7 +428,14 @@ const geocodeRows = async (rows) => {
           onLoad={map => (mapRef.current = map)}
           options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
         >
-          {activityMarkers.map((m, i) => (
+          {activityMarkers.filter(m => {
+            // Find the individual's neighborhood by matching facilitator name to homeMarkers
+            const facilitator = (m.facilitator || '').trim().toLowerCase();
+            const home = homeMarkers.find(h => `${(h.firstName || '').trim().toLowerCase()} ${(h.lastName || '').trim().toLowerCase()}` === facilitator);
+            let n = home ? (home['Focus Neighbourhood'] || '').trim() : '';
+            if (!n) n = 'Other';
+            return selectedNeighborhoods.includes(n);
+          }).map((m, i) => (
             <Marker
               key={i}
               position={{ lat: m.lat, lng: m.lng }}
@@ -419,7 +448,11 @@ const geocodeRows = async (rows) => {
               onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
             />
           ))}
-          {homeMarkers.map((p, i) => (
+          {homeMarkers.filter(p => {
+            let n = (p['Focus Neighbourhood'] || '').trim();
+            if (!n) n = 'Other';
+            return selectedNeighborhoods.includes(n);
+          }).map((p, i) => (
             <Marker
               key={i}
               position={{ lat: p.lat, lng: p.lng }}
@@ -529,6 +562,44 @@ const geocodeRows = async (rows) => {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+        {/* Neighborhood filter */}
+        {neighborhoods.length > 0 && (
+          <div className="mt-8 mb-4">
+            <h2 className="text-lg font-bold mb-2">Neighborhood</h2>
+            <div className="flex gap-4 mb-2">
+              <button
+                className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700"
+                onClick={() => setSelectedNeighborhoods([...neighborhoods])}
+              >
+                Select All
+              </button>
+              <button
+                className="px-2 py-1 bg-gray-300 text-gray-800 text-xs rounded hover:bg-gray-400"
+                onClick={() => setSelectedNeighborhoods([])}
+              >
+                Select None
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {neighborhoods.map(n => (
+                <label key={n} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedNeighborhoods.includes(n)}
+                    onChange={e => {
+                      setSelectedNeighborhoods(sel =>
+                        e.target.checked
+                          ? [...sel, n].sort((a, b) => a.localeCompare(b))
+                          : sel.filter(x => x !== n)
+                      );
+                    }}
+                  />
+                  <span>{n}</span>
+                </label>
+              ))}
+            </div>
           </div>
         )}
       </div>
