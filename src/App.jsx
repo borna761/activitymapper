@@ -1,5 +1,5 @@
 // ActivityMapper.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -69,6 +69,15 @@ function sortActivities(a, b) {
   return 0;
 }
 
+// Debounced update for selectedNeighborhoods
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
 export default function ActivityMapper() {
   const [isAddressLoading, setIsAddressLoading] = useState(false);
   const [isLatLonLoading, setIsLatLonLoading] = useState(false);
@@ -84,9 +93,12 @@ export default function ActivityMapper() {
   const [activityTypeCounts, setActivityTypeCounts] = useState({ CC: 0, DM: 0, JY: 0, SC: 0 });
   const [neighborhoods, setNeighborhoods] = useState([]);
   const [selectedNeighborhoods, setSelectedNeighborhoods] = useState([]);
+  const [facilitatorNeighborhoodLookup, setFacilitatorNeighborhoodLookup] = useState({});
+  const [isBatchingMarkers, setIsBatchingMarkers] = useState(false);
+  const [batchedActivityMarkers, setBatchedActivityMarkers] = useState([]);
+  const [batchedHomeMarkers, setBatchedHomeMarkers] = useState([]);
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
-
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -293,6 +305,13 @@ export default function ActivityMapper() {
       setSelectedNeighborhoods(uniqueNeighborhoods);
       if (results.length) { setCenter(results[0]); setZoom(10); }
       setIsAddressLoading(false);
+      // Build facilitator-to-neighborhood lookup
+      const lookup = {};
+      results.forEach(h => {
+        const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
+        lookup[fullName] = (h['Focus Neighbourhood'] || '').trim() || 'Other';
+      });
+      setFacilitatorNeighborhoodLookup(lookup);
     };
 
     let rows = [];
@@ -376,7 +395,64 @@ const geocodeRows = async (rows) => {
     setSelectedNeighborhoods(uniqueNeighborhoods);
     if (results.length) { setCenter(results[0]); setZoom(10); }
     setIsAddressLoading(false);
+    // Build facilitator-to-neighborhood lookup
+    const lookup = {};
+    results.forEach(h => {
+      const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
+      lookup[fullName] = (h['Focus Neighbourhood'] || '').trim() || 'Other';
+    });
+    setFacilitatorNeighborhoodLookup(lookup);
   };
+
+  // Debounced update for selectedNeighborhoods
+  const setSelectedNeighborhoodsDebounced = useCallback(
+    debounce((val) => setSelectedNeighborhoods(val), 200),
+    []
+  );
+
+  // Batching function for markers
+  const batchUpdateMarkers = useCallback((filteredActivities, filteredHomes, batchSize = 200) => {
+    setIsBatchingMarkers(true);
+    let aIdx = 0, hIdx = 0;
+    function batch() {
+      setBatchedActivityMarkers(filteredActivities.slice(0, aIdx + batchSize));
+      setBatchedHomeMarkers(filteredHomes.slice(0, hIdx + batchSize));
+      aIdx += batchSize;
+      hIdx += batchSize;
+      if (aIdx < filteredActivities.length || hIdx < filteredHomes.length) {
+        setTimeout(batch, 0);
+      } else {
+        setIsBatchingMarkers(false);
+      }
+    }
+    setBatchedActivityMarkers([]);
+    setBatchedHomeMarkers([]);
+    batch();
+  }, []);
+
+  // Memoized filtered markers for performance
+  const filteredActivityMarkers = useMemo(() =>
+    activityMarkers.filter(m => {
+      const facilitator = normalizeName(m.facilitator || '');
+      const n = facilitatorNeighborhoodLookup[facilitator] || 'Other';
+      return selectedNeighborhoods.includes(n);
+    }),
+    [activityMarkers, selectedNeighborhoods, facilitatorNeighborhoodLookup]
+  );
+  const filteredHomeMarkers = useMemo(() =>
+    homeMarkers.filter(p => {
+      let n = (p['Focus Neighbourhood'] || '').trim();
+      if (!n) n = 'Other';
+      return selectedNeighborhoods.includes(n);
+    }),
+    [homeMarkers, selectedNeighborhoods]
+  );
+
+  // Batch update markers when filter changes
+  useEffect(() => {
+    batchUpdateMarkers(filteredActivityMarkers, filteredHomeMarkers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredActivityMarkers, filteredHomeMarkers]);
 
   if (!isLoaded) return <div>Loading map...</div>;
 
@@ -428,14 +504,12 @@ const geocodeRows = async (rows) => {
           onLoad={map => (mapRef.current = map)}
           options={{ disableDefaultUI: true, zoomControl: true, mapId: MAP_ID }}
         >
-          {activityMarkers.filter(m => {
-            // Find the individual's neighborhood by matching facilitator name to homeMarkers
-            const facilitator = (m.facilitator || '').trim().toLowerCase();
-            const home = homeMarkers.find(h => `${(h.firstName || '').trim().toLowerCase()} ${(h.lastName || '').trim().toLowerCase()}` === facilitator);
-            let n = home ? (home['Focus Neighbourhood'] || '').trim() : '';
-            if (!n) n = 'Other';
-            return selectedNeighborhoods.includes(n);
-          }).map((m, i) => (
+          {isBatchingMarkers && (
+            <div className="absolute left-1/2 top-10 z-50 -translate-x-1/2 bg-black bg-opacity-70 text-white px-6 py-3 rounded shadow-lg">
+              Updating markers...
+            </div>
+          )}
+          {batchedActivityMarkers.map((m, i) => (
             <Marker
               key={i}
               position={{ lat: m.lat, lng: m.lng }}
@@ -448,11 +522,7 @@ const geocodeRows = async (rows) => {
               onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
             />
           ))}
-          {homeMarkers.filter(p => {
-            let n = (p['Focus Neighbourhood'] || '').trim();
-            if (!n) n = 'Other';
-            return selectedNeighborhoods.includes(n);
-          }).map((p, i) => (
+          {batchedHomeMarkers.map((p, i) => (
             <Marker
               key={i}
               position={{ lat: p.lat, lng: p.lng }}
@@ -541,13 +611,13 @@ const geocodeRows = async (rows) => {
             <div className="flex gap-4 mb-2">
               <button
                 className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700"
-                onClick={() => setSelectedNeighborhoods([...neighborhoods])}
+                onClick={() => setSelectedNeighborhoodsDebounced([...neighborhoods])}
               >
                 Select All
               </button>
               <button
                 className="px-2 py-1 bg-gray-300 text-gray-800 text-xs rounded hover:bg-gray-400"
-                onClick={() => setSelectedNeighborhoods([])}
+                onClick={() => setSelectedNeighborhoodsDebounced([])}
               >
                 Select None
               </button>
@@ -559,10 +629,10 @@ const geocodeRows = async (rows) => {
                     type="checkbox"
                     checked={selectedNeighborhoods.includes(n)}
                     onChange={e => {
-                      setSelectedNeighborhoods(sel =>
+                      setSelectedNeighborhoodsDebounced(
                         e.target.checked
-                          ? [...sel, n].sort((a, b) => a.localeCompare(b))
-                          : sel.filter(x => x !== n)
+                          ? [...selectedNeighborhoods, n].sort((a, b) => a.localeCompare(b))
+                          : selectedNeighborhoods.filter(x => x !== n)
                       );
                     }}
                   />
