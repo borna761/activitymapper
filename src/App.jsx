@@ -220,8 +220,8 @@ export default function ActivityMapper() {
             activityName: act.activityName,
             facilitators: act.facilitators,
           });
-          // Count unique activity rows by name+type
-          const uniqueKey = `${act.activityName || ''}|${act.activity}`;
+          // Count unique activity rows by name+type+facilitators
+          const uniqueKey = `${act.activityName || ''}|${act.activity}|${act.facilitators}`;
           if (!uniqueMappedActivities[act.activity]) uniqueMappedActivities[act.activity] = new Set();
           uniqueMappedActivities[act.activity].add(uniqueKey);
         });
