@@ -97,6 +97,7 @@ export default function ActivityMapper() {
   const [isBatchingMarkers, setIsBatchingMarkers] = useState(false);
   const [batchedActivityMarkers, setBatchedActivityMarkers] = useState([]);
   const [batchedHomeMarkers, setBatchedHomeMarkers] = useState([]);
+  const [skipIndividualRows, setSkipIndividualRows] = useState(0);
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -314,24 +315,32 @@ export default function ActivityMapper() {
       setFacilitatorNeighborhoodLookup(lookup);
     };
 
+    const skip = Math.max(0, parseInt(skipIndividualRows, 10) || 0);
     let rows = [];
     if (file.name.endsWith('.xlsx')) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        const opts = skip > 0 ? { range: skip } : {};
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], opts);
         geocodeRows(rows);
       };
       reader.readAsArrayBuffer(file);
     } else {
-      Papa.parse(file, {
-        header: true, skipEmptyLines: true,
-        complete: ({ data }) => {
-          rows = data;
-          geocodeRows(rows);
-        }
-      });
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result || '';
+        const lines = text.split(/\r?\n/).filter((l, i) => i >= skip);
+        const csv = lines.join('\n');
+        Papa.parse(csv, {
+          header: true, skipEmptyLines: true,
+          complete: ({ data }) => {
+            geocodeRows(data);
+          }
+        });
+      };
+      reader.readAsText(file);
     }
   }
 
@@ -472,11 +481,25 @@ const geocodeRows = async (rows) => {
                 ></span>
               )}
             </span>
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={handleAddressUpload}
-              className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={handleAddressUpload}
+                className="block w-full border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+              <span className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <label htmlFor="skip-rows">Skip first</label>
+                <input
+                  id="skip-rows"
+                  type="number"
+                  min={0}
+                  value={skipIndividualRows}
+                  onChange={e => setSkipIndividualRows(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-16 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                />
+                rows (header row)
+              </span>
+            </div>
           </label>
           <label className="block text-md font-medium">
             <span className="flex justify-between">
