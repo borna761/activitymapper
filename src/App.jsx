@@ -4,46 +4,37 @@ import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { RateLimiter } from "limiter";
+import {
+  CONTAINER_STYLE as containerStyle,
+  ICON_COLORS,
+  ACTIVITY_LABELS,
+  ICON_BASE_URL,
+  HOME_ICON_URL,
+  ACTIVITY_MARKER_RADIUS_DEG,
+  MARKER_BATCH_SIZE,
+  DEBOUNCE_MS,
+} from "./constants";
+import {
+  getField,
+  NEIGHBORHOOD_KEYS,
+  POSTAL_KEYS,
+  LOCALITY_KEYS,
+  REGION_KEYS,
+  NATIONAL_COMMUNITY_KEYS,
+  FIRST_NAME_KEYS,
+  LAST_NAME_KEYS,
+  ACTIVITY_TYPE_KEYS,
+  ACTIVITY_NAME_KEYS,
+  FACILITATORS_KEYS,
+  findIndividualsHeaderRow,
+  findActivitiesHeaderRow,
+} from "./utils/parsing";
+import { getPixelPosition } from "./utils/mapUtils";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
-
-const containerStyle = { width: "1400px", height: "850px" };
-
-const ICON_COLORS = {
-  CC: "#4CAF50",
-  DM: "#F44336",
-  JY: "#2196F3",
-  SC: "#9C27B0",
-};
-
-const ACTIVITY_LABELS = {
-  CC: "Children's Class",
-  DM: "Devotional",
-  JY: "Junior Youth",
-  SC: "Study Circle",
-};
-
-const ICON_BASE_URL = "https://cdn.jsdelivr.net/gh/borna761/activitymapper-icons/icons";
-const HOME_ICON_URL = `${ICON_BASE_URL}/home.png`;
-
-// Helper to get pixel position from lat/lng
-function getPixelPosition(map, lat, lng) {
-  if (!map) return { left: 0, top: 0 };
-  const scale = Math.pow(2, map.getZoom());
-  const proj = map.getProjection();
-  if (!proj) return { left: 0, top: 0 };
-  const bounds = map.getBounds();
-  if (!bounds) return { left: 0, top: 0 };
-  const nw = proj.fromLatLngToPoint(bounds.getNorthEast());
-  const se = proj.fromLatLngToPoint(bounds.getSouthWest());
-  const point = proj.fromLatLngToPoint(new window.google.maps.LatLng(lat, lng));
-  const left = (point.x - se.x) * scale;
-  const top = (point.y - nw.y) * scale;
-  return { left, top };
-}
 
 // Helper to get activity name before the first comma, with error handling
 const getShortActivityName = name => {
@@ -52,18 +43,18 @@ const getShortActivityName = name => {
   return idx === -1 ? name : name.slice(0, idx);
 };
 
-// Helper to sort by activity type, then activity name, then facilitator
+// Helper to sort by activity type, then activity name, then facilitator (uses shared column keys)
 function sortActivities(a, b) {
-  const typeA = (a['Activity Type'] || '').toLowerCase();
-  const typeB = (b['Activity Type'] || '').toLowerCase();
+  const typeA = (getField(a, ACTIVITY_TYPE_KEYS) || '').toLowerCase();
+  const typeB = (getField(b, ACTIVITY_TYPE_KEYS) || '').toLowerCase();
   if (typeA < typeB) return -1;
   if (typeA > typeB) return 1;
-  const nameA = getShortActivityName(a['Name'] || a['name'] || '').toLowerCase();
-  const nameB = getShortActivityName(b['Name'] || b['name'] || '').toLowerCase();
+  const nameA = getShortActivityName(getField(a, ACTIVITY_NAME_KEYS) || '').toLowerCase();
+  const nameB = getShortActivityName(getField(b, ACTIVITY_NAME_KEYS) || '').toLowerCase();
   if (nameA < nameB) return -1;
   if (nameA > nameB) return 1;
-  const facA = (a['Facilitators'] || '').toLowerCase();
-  const facB = (b['Facilitators'] || '').toLowerCase();
+  const facA = (getField(a, FACILITATORS_KEYS) || '').toLowerCase();
+  const facB = (getField(b, FACILITATORS_KEYS) || '').toLowerCase();
   if (facA < facB) return -1;
   if (facA > facB) return 1;
   return 0;
@@ -97,6 +88,8 @@ export default function ActivityMapper() {
   const [isBatchingMarkers, setIsBatchingMarkers] = useState(false);
   const [batchedActivityMarkers, setBatchedActivityMarkers] = useState([]);
   const [batchedHomeMarkers, setBatchedHomeMarkers] = useState([]);
+  const [geocodeError, setGeocodeError] = useState(null);
+  const homeMarkersRef = useRef([]);
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -119,7 +112,11 @@ export default function ActivityMapper() {
       mapRef.current.fitBounds(bounds);
     }
   }, [activityMarkers, homeMarkers]);
-  
+
+  useEffect(() => {
+    homeMarkersRef.current = homeMarkers;
+  }, [homeMarkers]);
+
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -146,6 +143,7 @@ export default function ActivityMapper() {
 
   const handleLatLonUpload = (e) => {
     const file = e.target.files[0];
+    const input = e.target;
     if (!file) return;
     setIsLatLonLoading(true);
     setActivityMarkers([]);
@@ -153,9 +151,9 @@ export default function ActivityMapper() {
     const facilitatorNotFound = [];
     const typeCounts = { CC: 0, DM: 0, JY: 0, SC: 0 };
     const processActivities = (data) => {
-      // Build a lookup for homeMarkers by normalized full name
+      const currentHomes = homeMarkersRef.current;
       const homeLookup = {};
-      homeMarkers.forEach(h => {
+      currentHomes.forEach(h => {
         const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
         if (fullName) homeLookup[fullName] = h;
       });
@@ -164,21 +162,20 @@ export default function ActivityMapper() {
       // Track unique activities by type (not per facilitator)
       const uniqueActivityRows = new Set();
       data.forEach(row => {
-        const activityTypeRaw = row['Activity Type'] || row['activity type'] || row['Type'] || row['type'] || '';
+        const activityTypeRaw = getField(row, ACTIVITY_TYPE_KEYS) || '';
         const activityType = ACTIVITY_TYPE_MAP[activityTypeRaw.trim().toLowerCase()];
         if (!activityType) return;
-        const facilitatorsRaw = row['Facilitators'] || row['facilitators'] || '';
+        const facilitatorsRaw = getField(row, FACILITATORS_KEYS) || '';
         if (!facilitatorsRaw.trim()) {
           noFacilitators.push(row);
-          return; // skip if facilitators is empty
+          return;
         }
-        // Use a unique key for each activity row (e.g., name + type + facilitators)
-        const uniqueKey = `${row['Name'] || row['name'] || ''}|${activityType}`;
+        const activityName = getField(row, ACTIVITY_NAME_KEYS) || '';
+        const uniqueKey = `${activityName}|${activityType}`;
         if (!uniqueActivityRows.has(uniqueKey)) {
           typeCounts[activityType] = (typeCounts[activityType] || 0) + 1;
           uniqueActivityRows.add(uniqueKey);
         }
-        const activityName = row['Name'] || row['name'] || '';
         let foundAny = false;
         facilitatorsRaw.split(';').forEach(name => {
           const normName = normalizeName(name);
@@ -199,18 +196,16 @@ export default function ActivityMapper() {
           facilitatorNotFound.push(row);
         }
       });
-      // Spread activities in a circle for each facilitator
       const markers = [];
-      const radius = 0.0005; // degrees
-      // For counting unique activities that are actually mapped
       const uniqueMappedActivities = {};
       Object.entries(facilitatorActivities).forEach(([normName, acts]) => {
         const base = homeLookup[normName];
         acts.forEach((act, i) => {
           const angle = (2 * Math.PI * i) / acts.length;
-          const latOffset = Math.sin(angle) * radius;
-          const lngOffset = Math.cos(angle) * radius;
+          const latOffset = Math.sin(angle) * ACTIVITY_MARKER_RADIUS_DEG;
+          const lngOffset = Math.cos(angle) * ACTIVITY_MARKER_RADIUS_DEG;
           markers.push({
+            id: `act-${normName}-${act.facilitator}-${act.activityName || ''}-${i}`,
             lat: base.lat + latOffset,
             lng: base.lng + lngOffset,
             activity: act.activity,
@@ -247,23 +242,52 @@ export default function ActivityMapper() {
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const headerRowIndex = findActivitiesHeaderRow(rawRows);
+        const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
         processActivities(rows);
+        input.value = '';
       };
       reader.readAsArrayBuffer(file);
     } else {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: ({ data }) => processActivities(data),
-      });
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result || '';
+        Papa.parse(text, {
+          header: false,
+          skipEmptyLines: true,
+          complete: ({ data: rawRows }) => {
+            const headerRowIndex = findActivitiesHeaderRow(rawRows);
+            const headers = rawRows[headerRowIndex] || [];
+            const rows = rawRows.slice(headerRowIndex + 1).map((row) => {
+              const obj = {};
+              headers.forEach((h, i) => {
+                obj[String(h ?? '').trim() || `Column${i}`] = row[i] ?? '';
+              });
+              return obj;
+            }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
+            processActivities(rows);
+            input.value = '';
+          },
+        });
+      };
+      reader.readAsText(file);
     }
   };
 
-  const geocodeAddress = async (addr) => {
-    const remainingMessages = await limiter.removeTokens(1);
+  const GEOCODE_MAX_RETRIES = 3;
+  const geocodeAddress = async (addr, retryCount = 0) => {
+    try {
+      await limiter.removeTokens(1);
+    } catch {
+      if (retryCount >= GEOCODE_MAX_RETRIES) return null;
+      await new Promise(r => setTimeout(r, 1000));
+      return geocodeAddress(addr, retryCount + 1);
+    }
     const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(addr)}&proximity=ip&access_token=${MAPBOX_TOKEN}`;
     const res = await fetch(url);
+    if (!res.ok) return null;
     const data = await res.json();
     if (data.features && data.features[0]) {
       const [lng, lat] = data.features[0].geometry.coordinates;
@@ -272,121 +296,60 @@ export default function ActivityMapper() {
     return null;
   };
 
-  const getNameField = (row, keys) => {
-    for (const key of keys) {
-      for (const k in row) {
-        if (k.replace(/\s|_/g, '').toLowerCase() === key.replace(/\s|_/g, '').toLowerCase()) {
-          return row[k];
-        }
-      }
-    }
-    return '';
-  };
-
   const handleAddressUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0];
+    const input = e.target;
+    if (!file) return;
     setIsAddressLoading(true);
+    setGeocodeError(null);
     setHomeMarkers([]);
     setActivityMarkers([]);
     setActivitiesNoFacilitators([]);
     setActivitiesFacilitatorNotFound([]);
 
-    const process = (results) => {
-      setHomeMarkers(results);
-      // Treat blank neighborhoods as 'Other'
-      const allNeighborhoodsRaw = results.map(r => {
-        const n = (r['Focus Neighbourhood'] || '').trim();
-        return n ? n : 'Other';
-      });
-      let uniqueNeighborhoods = Array.from(new Set(allNeighborhoodsRaw));
-      uniqueNeighborhoods = uniqueNeighborhoods.filter(n => n !== 'Other').sort((a, b) => a.localeCompare(b));
-      if (allNeighborhoodsRaw.includes('Other')) uniqueNeighborhoods.push('Other');
-      setNeighborhoods(uniqueNeighborhoods);
-      setSelectedNeighborhoods(uniqueNeighborhoods);
-      if (results.length) { setCenter(results[0]); setZoom(10); }
-      setIsAddressLoading(false);
-      // Build facilitator-to-neighborhood lookup
-      const lookup = {};
-      results.forEach(h => {
-        const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
-        lookup[fullName] = (h['Focus Neighbourhood'] || '').trim() || 'Other';
-      });
-      setFacilitatorNeighborhoodLookup(lookup);
-    };
-
-    let rows = [];
     if (file.name.endsWith('.xlsx')) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        geocodeRows(rows);
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const headerRowIndex = findIndividualsHeaderRow(rawRows);
+        const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
+        geocodeRows(rows).then(() => { input.value = ''; });
       };
       reader.readAsArrayBuffer(file);
     } else {
-      Papa.parse(file, {
-        header: true, skipEmptyLines: true,
-        complete: ({ data }) => {
-          rows = data;
-          geocodeRows(rows);
-        }
-      });
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target.result || '';
+        Papa.parse(text, {
+          header: false,
+          skipEmptyLines: true,
+          complete: ({ data: rawRows }) => {
+            const headerRowIndex = findIndividualsHeaderRow(rawRows);
+            const headers = rawRows[headerRowIndex] || [];
+            const rows = rawRows.slice(headerRowIndex + 1).map((row) => {
+              const obj = {};
+              headers.forEach((h, i) => {
+                obj[String(h ?? '').trim() || `Column${i}`] = row[i] ?? '';
+              });
+              return obj;
+            }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
+            geocodeRows(rows).then(() => { input.value = ''; });
+          }
+        });
+      };
+      reader.readAsText(file);
     }
-  }
+  };
 
-const geocodeRows = async (rows) => {
-  // Step 1: Deduplicate by address key for geocoding
-  const addressKey = r => [
-    r['Address'] || '',
-    r['Focus Neighbourhood'] || '',
-    r['Locality'] || '',
-    r['Region'] || '',
-    r['National Community'] || ''
-  ].join('|');
-  const uniqueRows = Array.from(
-    new Map(
-      rows.map(r => [addressKey(r), r])
-    ).values()
-  );
-  // Step 2: Geocode unique addresses
-  const geocodedMap = {};
-  for (const row of uniqueRows) {
-    const query = [
-      row['Address'] || '',
-      row['Focus Neighbourhood'] || '',
-      row['Locality'] || '',
-      row['Region'] || '',
-      row['National Community'] || ''
-    ].filter(Boolean).join(', ');
-    const result = await geocodeAddress(query);
-    if (result) {
-      geocodedMap[addressKey(row)] = result;
-    }
-  }
-  // Step 3: Assign geocoded lat/lng to all individuals
-  const allIndividuals = rows.map(r => {
-    const geo = geocodedMap[addressKey(r)];
-    const firstName = getNameField(r, ['First Name', 'FirstName', 'Firstname', 'first_name', 'firstname', 'First Name(s)']);
-    const lastName = getNameField(r, ['Last Name', 'LastName', 'Lastname', 'last_name', 'lastname', 'Family Name']);
-    return geo ? {
-      ...r,
-      lat: geo.lat,
-      lng: geo.lng,
-      address: geo.address,
-      firstName,
-      lastName
-    } : null;
-  }).filter(Boolean);
-  processResults(allIndividuals);
-};
-
-  const processResults = results => {
+  const processResults = useCallback(results => {
     setHomeMarkers(results);
-    // Treat blank neighborhoods as 'Other'
     const allNeighborhoodsRaw = results.map(r => {
-      const n = (r['Focus Neighbourhood'] || '').trim();
-      return n ? n : 'Other';
+      const n = getField(r, NEIGHBORHOOD_KEYS);
+      const trimmed = (n || '').trim();
+      return trimmed ? trimmed : 'Other';
     });
     let uniqueNeighborhoods = Array.from(new Set(allNeighborhoodsRaw));
     uniqueNeighborhoods = uniqueNeighborhoods.filter(n => n !== 'Other').sort((a, b) => a.localeCompare(b));
@@ -395,23 +358,88 @@ const geocodeRows = async (rows) => {
     setSelectedNeighborhoods(uniqueNeighborhoods);
     if (results.length) { setCenter(results[0]); setZoom(10); }
     setIsAddressLoading(false);
-    // Build facilitator-to-neighborhood lookup
     const lookup = {};
     results.forEach(h => {
       const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
-      lookup[fullName] = (h['Focus Neighbourhood'] || '').trim() || 'Other';
+      lookup[fullName] = (getField(h, NEIGHBORHOOD_KEYS) || '').trim() || 'Other';
     });
     setFacilitatorNeighborhoodLookup(lookup);
-  };
+  }, []);
+
+  const geocodeRows = useCallback(async (rows) => {
+    const getStreetPart = (r) => {
+      const addr = getField(r, ['Address']);
+      if (addr) return addr;
+      const line1 = getField(r, ['Address Line 1', 'Address line 1']);
+      const line2 = getField(r, ['Address Line 2', 'Address line 2']);
+      return [line1, line2].filter(Boolean).join(', ');
+    };
+    const getNeighborhood = (r) => (getField(r, NEIGHBORHOOD_KEYS) || '').trim();
+    const getPostal = (r) => (getField(r, POSTAL_KEYS) || '').trim();
+    const getLocality = (r) => (getField(r, LOCALITY_KEYS) || '').trim();
+    const getRegion = (r) => (getField(r, REGION_KEYS) || '').trim();
+    const getNationalCommunity = (r) => (getField(r, NATIONAL_COMMUNITY_KEYS) || '').trim();
+    const addressKey = (r) => [
+      getStreetPart(r),
+      getNeighborhood(r),
+      getPostal(r),
+      getLocality(r),
+      getRegion(r),
+      getNationalCommunity(r),
+    ].join('|');
+    const uniqueRows = Array.from(
+      new Map(rows.map(r => [addressKey(r), r])).values()
+    );
+    const geocodedMap = {};
+    let failedCount = 0;
+    for (const row of uniqueRows) {
+      const query = [
+        getStreetPart(row),
+        getNeighborhood(row),
+        getPostal(row),
+        getLocality(row),
+        getRegion(row),
+        getNationalCommunity(row),
+      ].filter(Boolean).join(', ');
+      const result = await geocodeAddress(query);
+      if (result) {
+        geocodedMap[addressKey(row)] = result;
+      } else {
+        failedCount++;
+      }
+    }
+    if (failedCount > 0) {
+      setGeocodeError(`${failedCount} address(es) could not be geocoded.`);
+    } else {
+      setGeocodeError(null);
+    }
+    const allIndividuals = rows.map((r, idx) => {
+      const geo = geocodedMap[addressKey(r)];
+      const firstName = getField(r, FIRST_NAME_KEYS) || '';
+      const lastName = getField(r, LAST_NAME_KEYS) || '';
+      return geo
+        ? {
+            ...r,
+            id: `home-${geo.lat}-${geo.lng}-${firstName}-${lastName}-${idx}`,
+            lat: geo.lat,
+            lng: geo.lng,
+            address: geo.address,
+            firstName,
+            lastName,
+          }
+        : null;
+    }).filter(Boolean);
+    processResults(allIndividuals);
+  }, [processResults]);
 
   // Debounced update for selectedNeighborhoods
   const setSelectedNeighborhoodsDebounced = useCallback(
-    debounce((val) => setSelectedNeighborhoods(val), 200),
+    debounce((val) => setSelectedNeighborhoods(val), DEBOUNCE_MS),
     []
   );
 
   // Batching function for markers
-  const batchUpdateMarkers = useCallback((filteredActivities, filteredHomes, batchSize = 200) => {
+  const batchUpdateMarkers = useCallback((filteredActivities, filteredHomes, batchSize = MARKER_BATCH_SIZE) => {
     setIsBatchingMarkers(true);
     let aIdx = 0, hIdx = 0;
     function batch() {
@@ -441,7 +469,7 @@ const geocodeRows = async (rows) => {
   );
   const filteredHomeMarkers = useMemo(() =>
     homeMarkers.filter(p => {
-      let n = (p['Focus Neighbourhood'] || '').trim();
+      let n = (getField(p, NEIGHBORHOOD_KEYS) || '').trim();
       if (!n) n = 'Other';
       return selectedNeighborhoods.includes(n);
     }),
@@ -458,8 +486,23 @@ const geocodeRows = async (rows) => {
 
   return (
     <div className="p-6">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {isAddressLoading && "Loading individuals file…"}
+        {isLatLonLoading && "Loading activities…"}
+        {geocodeError ?? ""}
+      </div>
       <div className="max-w-[1400px] mx-auto">
         <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
+        {geocodeError && (
+          <p className="mb-4 p-3 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 rounded" role="alert">
+            {geocodeError}
+          </p>
+        )}
         <div className="flex flex-col gap-5 sm:flex-row pb-5 w-full justify-start items-start gap-10">
           <label className="block text-md font-medium">
             <span className="flex justify-between">
@@ -476,7 +519,7 @@ const geocodeRows = async (rows) => {
               type="file"
               accept=".csv,.xlsx"
               onChange={handleAddressUpload}
-              className="block w-full mt-2 border border-gray-300 rounded-lg text-md  cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
+              className="block w-full mt-2 border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
           </label>
           <label className="block text-md font-medium">
             <span className="flex justify-between">
@@ -509,9 +552,9 @@ const geocodeRows = async (rows) => {
               Updating markers...
             </div>
           )}
-          {batchedActivityMarkers.map((m, i) => (
+          {batchedActivityMarkers.map((m) => (
             <Marker
-              key={i}
+              key={m.id}
               position={{ lat: m.lat, lng: m.lng }}
               icon={{
                 url: `${ICON_BASE_URL}/${m.activity.toLowerCase()}.png`,
@@ -522,9 +565,9 @@ const geocodeRows = async (rows) => {
               onClick={() => { setSelectedActivity(m); setSelectedHome(null); }}
             />
           ))}
-          {batchedHomeMarkers.map((p, i) => (
+          {batchedHomeMarkers.map((p) => (
             <Marker
-              key={i}
+              key={p.id ?? `home-${p.lat}-${p.lng}-${p.firstName}-${p.lastName}`}
               position={{ lat: p.lat, lng: p.lng }}
               icon={{
                 url: HOME_ICON_URL,
@@ -572,7 +615,9 @@ const geocodeRows = async (rows) => {
                   <div className="flex justify-end mt-2">
                     <button
                       onClick={() => {
-                        setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
+                        setHomeMarkers(prev => prev.filter(h => (
+                          (h.id != null && selectedHome.id != null) ? h.id !== selectedHome.id : h !== selectedHome
+                        )));
                         setSelectedHome(null);
                       }}
                       className="px-3 py-1 bg-red-600 text-white text-xs rounded shadow"
@@ -649,9 +694,9 @@ const geocodeRows = async (rows) => {
             <ul className="list-disc pl-6">
               {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                  {getField(row, ACTIVITY_TYPE_KEYS) ? `${getField(row, ACTIVITY_TYPE_KEYS)}: ` : ''}
+                  {getShortActivityName(getField(row, ACTIVITY_NAME_KEYS) || '[No Name]')}
+                  {getField(row, FACILITATORS_KEYS) ? ` - Facilitators: ${getField(row, FACILITATORS_KEYS)}` : ''}
                 </li>
               ))}
             </ul>
@@ -664,9 +709,9 @@ const geocodeRows = async (rows) => {
             <ul className="list-disc pl-6">
               {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                  {getField(row, ACTIVITY_TYPE_KEYS) ? `${getField(row, ACTIVITY_TYPE_KEYS)}: ` : ''}
+                  {getShortActivityName(getField(row, ACTIVITY_NAME_KEYS) || '[No Name]')}
+                  {getField(row, FACILITATORS_KEYS) ? ` - Facilitators: ${getField(row, FACILITATORS_KEYS)}` : ''}
                 </li>
               ))}
             </ul>
