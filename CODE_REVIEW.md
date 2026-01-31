@@ -1,169 +1,110 @@
-# Code Review: Activity Mapper
+# Code Review: Activity Mapper (post-fixes)
 
-**Scope:** `src/App.jsx` and related structure  
-**Date:** 2025-01-31
+**Scope:** `src/App.jsx`, `src/constants.js`, `src/utils/parsing.js`, `src/utils/mapUtils.js`  
+**Date:** 2025-01-31 (second pass)
 
 ---
 
 ## Summary
 
-The app is a single-page React map that loads individuals (CSV/XLSX), geocodes them, then loads activities and maps them by facilitator. Logic is clear and the recent Individuals parsing (auto header, flexible columns) is well thought out. The main issues are: dead code, duplication, a very large single component, and a few correctness/UX gaps.
+The earlier review items have been addressed: dead code removed, `geocodeRows` scoped inside the component with explicit dependencies, stable marker keys, geocode error handling and rate limiter, `homeMarkersRef` for stale closure, activities header detection, flexible Locality/Region/National Community, and constants/utils extracted into separate modules. The codebase is in good shape. Below are remaining minor items and optional improvements.
 
 ---
 
-## Critical / High
+## Addressed (from first review)
 
-### 1. Dead code: `process` in `handleAddressUpload`
-
-**Location:** Lines 317–338
-
-A local `process(results)` is defined inside `handleAddressUpload` but **never called**. The flow is: parse file → `geocodeRows(rows)` → `processResults(allIndividuals)`. The local `process` also uses hardcoded `r['Focus Neighbourhood']` instead of the shared neighborhood lookup.
-
-**Recommendation:** Remove the unused `process` function.
-
----
-
-### 2. `geocodeRows` and `processResults` scope
-
-**Location:** Lines 392–451
-
-`geocodeRows` is defined at **module level** (no leading indent) but calls `getNameField`, `processResults`, `normalizeName`, and setters — all defined inside the component. In a normal module layout this would cause `ReferenceError` when geocoding runs. If the app works in practice, either:
-
-- `geocodeRows` is actually defined inside the component (e.g. indented and the review view is misleading), or  
-- There is a closure/binding that’s not obvious.
-
-**Recommendation:** Move `geocodeRows` (and `processResults` if needed) **inside** the component so the data flow and dependencies are explicit, or pass `processResults` and field helpers as arguments to `geocodeRows(rows, { processResults, getNameField, ... })` so it doesn’t rely on outer scope.
+| Item | Status |
+|------|--------|
+| Dead `process` in handleAddressUpload | Removed |
+| geocodeRows / processResults scope | geocodeRows in component with useCallback; processResults useCallback |
+| Unstable marker keys | Stable `m.id` / `p.id` with fallback for legacy home markers |
+| Geocoding error handling | res.ok check; setGeocodeError; banner + aria-live |
+| Rate limiter | try/catch + single retry after 1s |
+| Stale closure (homeMarkers in activities) | homeMarkersRef synced via useEffect; processActivities uses ref |
+| Activities file header | findActivitiesHeaderRow; CSV/XLSX both support skip-rows |
+| Locality / Region / National Community | LOCALITY_KEYS, REGION_KEYS, NATIONAL_COMMUNITY_KEYS in parsing; used in geocodeRows |
+| Magic numbers | constants.js (ACTIVITY_MARKER_RADIUS_DEG, MARKER_BATCH_SIZE, DEBOUNCE_MS) |
+| Accessibility | aria-live region (sr-only); geocode error with role="alert" |
+| Module split | constants.js, utils/parsing.js, utils/mapUtils.js |
 
 ---
 
-### 3. Marker keys: array index as `key`
+## Remaining / optional
 
-**Location:** Lines 581, 596
+### 1. Duplicate key lookup: `getNameField` vs `getField`
 
-```jsx
-{batchedActivityMarkers.map((m, i) => (
-  <Marker key={i} ... />
-))}
-{batchedHomeMarkers.map((p, i) => (
-  <Marker key={i} ... />
-))}
-```
+**Location:** App.jsx lines 291–300 (`getNameField`) and usage in `geocodeRows` (first/last name).
 
-Using `key={i}` is fragile when the list is reordered or filtered and can cause unnecessary re-renders or wrong mapping.
+`getNameField` does the same key-normalization as `getField` in `utils/parsing.js`. Only first/last name still use `getNameField`; everything else uses `getField`.
 
-**Recommendation:** Use a stable key, e.g. `key={\`activity-${m.lat}-${m.lng}-${m.facilitator}-${m.activityName}\`}` and `key={\`home-${p.lat}-${p.lng}-${p.firstName}-${p.lastName}\`}` (or a hash), or add a unique `id` when building markers.
+**Suggestion:** Export `FIRST_NAME_KEYS` and `LAST_NAME_KEYS` from parsing.js, use `getField(r, FIRST_NAME_KEYS)` / `getField(r, LAST_NAME_KEYS)` in `geocodeRows`, and remove `getNameField` to avoid duplication and keep a single place for key logic.
 
 ---
 
-## Medium
+### 2. `sortActivities` and list rows still use hardcoded column names
 
-### 4. Duplicate neighborhood logic
+**Location:** App.jsx ~41–54 (`sortActivities`), ~706–711 and ~717–722 (activities no facilitators / facilitator not found lists).
 
-Neighborhood normalization (“use value or ‘Other’”) and unique-neighborhoods derivation are implemented in:
+They use `row['Activity Type']`, `row['Name']`, `row['Facilitators']`. After activities header detection, the file can use different column names (e.g. "Activity Type", "type").
 
-- The **dead** `process` (hardcoded `Focus Neighbourhood`)
-- **`processResults`** (uses `getField(r, NEIGHBORHOOD_KEYS)`)
-
-So there’s duplication and one place is outdated.
-
-**Recommendation:** Remove dead `process`. If any other code path ever needs “neighborhood or Other” and “unique neighborhoods,” extract a small helper (e.g. `getNeighborhoodForRow(r)`, `deriveUniqueNeighborhoods(results)`) and reuse it.
+**Suggestion:** Use the same key arrays as in `processActivities` (e.g. `getField(row, activityTypeKeys)`, `getField(row, nameKeys)`, `getField(row, facilitatorsKeys)`). You can define `ACTIVITY_TYPE_KEYS`, `ACTIVITY_NAME_KEYS`, `FACILITATORS_KEYS` in parsing.js and reuse them in `sortActivities` and in the two list renderers so display and sort stay consistent with parsing.
 
 ---
 
-### 5. Activities file: no header detection / skip rows
+### 3. Rate limiter retry can loop
 
-Individuals support auto header detection and flexible columns; the **Activities** upload still assumes the first row is the header (and uses `sheet_to_json` / Papa with `header: true` with no skip).
+**Location:** App.jsx ~266–271.
 
-**Recommendation:** If activities files can have leading rows or different column names, add the same pattern as Individuals: raw parse → detect header row → parse with that row as header, and optionally support flexible column names for Activity Type, Name, Facilitators.
+On `limiter.removeTokens(1)` throw we wait 1s and call `geocodeAddress(addr)` again. If the limiter (or network) keeps failing, this can retry indefinitely.
 
----
-
-### 6. No geocoding error handling
-
-**Location:** `geocodeRows` (e.g. around 421–424)
-
-If Mapbox returns an error (4xx/5xx) or malformed JSON, `res.json()` or `data.features` can throw or be undefined. Failed geocodes currently result in the row being dropped (no lat/lng) with no user feedback.
-
-**Recommendation:** Check `res.ok` and handle non-OK responses; catch and log or surface a message (e.g. “Some addresses could not be geocoded” and optionally how many). Optionally retry with backoff for 429.
+**Suggestion:** Cap retries (e.g. max 2–3) and then return `null` (or set a user-visible error) so one bad address doesn’t block the rest.
 
 ---
 
-### 7. Stale closure in `handleLatLonUpload`
+### 4. File input not reset after upload
 
-**Location:** Lines 155–161
+**Location:** File inputs in App.jsx.
 
-`processActivities` uses `homeMarkers` from the closure. If the user uploads Individuals, then immediately uploads Activities before state has updated, `homeMarkers` can still be the previous value (or empty).
+After a successful upload, choosing the same file again doesn’t trigger `onChange`, so the user can’t “re-run” the same file without picking another first.
 
-**Recommendation:** Either document that “Individuals must be loaded and visible before loading Activities,” or pass the current individuals/home list into the upload handler (e.g. from a ref that’s updated when individuals load) so Activities always use the latest data.
-
----
-
-## Low / Nice-to-have
-
-### 8. File size and structure
-
-`App.jsx` is ~746 lines and handles: config, helpers, map math, file parsing (Individuals + Activities), geocoding, batching, filtering, and all UI. This makes reuse and testing harder.
-
-**Recommendation:** Split into modules, e.g.:
-
-- `constants.js` (icons, labels, config)
-- `mapUtils.js` (e.g. `getPixelPosition`)
-- `individualsParser.js` (header detection, `getField`, `NEIGHBORHOOD_KEYS`, `POSTAL_KEYS`, building rows from CSV/XLSX)
-- `geocoding.js` (e.g. `geocodeAddress`, `geocodeRows` taking explicit callbacks)
-- `ActivityMapper.jsx` (state, effects, handlers, map + sidebar UI)
+**Suggestion:** In the upload handlers, after you’re done processing (e.g. after `geocodeRows(rows)` or `processActivities(rows)`), set `e.target.value = ''` so the same file can be selected again. Optional, UX-only.
 
 ---
 
-### 9. Magic numbers
+### 5. Remove home marker by reference
 
-Examples: `radius = 0.0005` (degrees), `batchSize = 200`, debounce `200` ms, `matches >= 2` for header detection.
+**Location:** App.jsx ~619.
 
-**Recommendation:** Name them (e.g. `ACTIVITY_MARKER_OFFSET_RADIUS_DEG`, `MARKER_BATCH_SIZE`, `HEADER_MIN_MATCHING_COLUMNS`) at the top of the file or in a small config so intent is clear and tuning is in one place.
+`setHomeMarkers(prev => prev.filter(h => h !== selectedHome))` uses reference equality. With stable `id` on home markers, `h.id !== selectedHome.id` would be more robust if the same individual ever appeared twice (e.g. duplicate rows).
 
----
-
-### 10. Accessibility
-
-- File inputs don’t have visible labels in some layouts (label is present but styling may hide it on small screens).
-- “Loading” is only a spinner; screen readers might benefit from `aria-live` and a short message (“Loading individuals…” / “Geocoding…”).
-- Neighborhood checkboxes and buttons are focusable; ensure focus order and visible focus ring for keyboard users.
+**Suggestion:** Prefer `filter(h => h.id !== selectedHome.id)` when `id` is present, with a fallback for legacy markers without `id` (e.g. `h !== selectedHome`).
 
 ---
 
-### 11. Rate limiter usage
+### 6. `HEADER_MIN_MATCHES` in constants unused in parsing
 
-**Location:** Line 263
+**Location:** constants.js exports `HEADER_MIN_MATCHES`; parsing.js `findHeaderRow` uses default `minMatches = 2`.
 
-`await limiter.removeTokens(1)` is used but the return value isn’t checked. If the limiter rejects (e.g. too many requests), the code still proceeds to `fetch`.
-
-**Recommendation:** If the limiter can throw or return a “denied” state, handle it (e.g. wait and retry, or show “Too many requests, please wait”).
-
----
-
-### 12. Locality / Region / National Community
-
-**Location:** `geocodeRows` (e.g. 410–412, 422–424)
-
-These are read with a single key: `r['Locality']`, `r['Region']`, `r['National Community']`. If the file uses different headers (e.g. “City,” “State,” “Country”), they won’t be used.
-
-**Recommendation:** Optionally add flexible keys (like `NEIGHBORHOOD_KEYS` / `POSTAL_KEYS`) for Locality, Region, National Community and use `getField` so minor naming differences are supported.
+**Suggestion:** Either import `HEADER_MIN_MATCHES` in parsing.js and pass it into `findHeaderRow` for individuals/activities, or stop exporting it from constants if you’re happy with the literal `2`. Keeps tuning in one place if you use the constant.
 
 ---
 
 ## What’s working well
 
-- **Individuals parsing:** Auto header detection and flexible column names (address lines, neighborhood, postal) are implemented consistently and make the app robust to different spreadsheets.
-- **Deduplication:** Geocoding by address key avoids duplicate API calls for the same address.
-- **Batching:** Marker batching (e.g. 200 at a time) keeps the map responsive with large datasets.
-- **Filtering:** Neighborhood filter with Select All / None and memoized filtered lists is clear and efficient.
-- **UX:** Loading spinners, disabled state for Activities until Individuals are loaded, and “Activities with no facilitators” / “Facilitator not found” sections give useful feedback.
+- **Structure:** Clear split between constants, parsing, map utils, and the main component; responsibilities are easy to follow.
+- **Individuals/Activities parsing:** Header detection and flexible column keys (including address lines, neighborhood, postal, locality, region, national community, activity type, name, facilitators) make the app robust to different spreadsheets and minor naming differences.
+- **Geocoding:** Address key deduplication, error counting, and user-facing message; rate limiter with simple retry; `geocodeRows` and `processResults` correctly scoped and memoized.
+- **Performance:** Marker batching, memoized filtered lists, debounced neighborhood selection, stable React keys for markers.
+- **UX:** Loading states, geocode error banner, aria-live for loading/errors, disabled Activities until Individuals are loaded, and “no facilitators” / “facilitator not found” sections.
+- **Accessibility:** sr-only live region, alert role on geocode error, and loading indicators with role="status".
 
 ---
 
-## Suggested order of changes
+## Suggested order of follow-ups
 
-1. Remove dead `process` in `handleAddressUpload`.
-2. Fix or clarify `geocodeRows` / `processResults` scope (move inside component or pass deps explicitly).
-3. Replace array index with stable keys for map markers.
-4. Add basic geocoding error handling and user feedback.
-5. Optionally: add header detection / skip rows for Activities; extract shared helpers and constants; improve a11y and rate limiter handling.
+1. (Optional) Use `getField` for first/last name and remove `getNameField`.
+2. (Optional) Use shared activity column key arrays in `sortActivities` and in the two activity list sections.
+3. (Optional) Add a max-retry limit for `geocodeAddress` rate limiter.
+4. (Optional) Reset file input after successful upload; filter by `id` when removing a home marker.
+
+No blocking issues; the app is in good shape for production use.

@@ -1,3 +1,5 @@
+import { HEADER_MIN_MATCHES } from "../constants";
+
 /**
  * Get row value by trying multiple key names (case/spacing insensitive).
  */
@@ -17,6 +19,11 @@ export const POSTAL_KEYS = ["Postal Code", "Postal", "Postcode", "Zip", "ZIP Cod
 export const LOCALITY_KEYS = ["Locality", "City", "locality", "city"];
 export const REGION_KEYS = ["Region", "State", "Province", "region", "state"];
 export const NATIONAL_COMMUNITY_KEYS = ["National Community", "Country", "national community", "country"];
+export const FIRST_NAME_KEYS = ["First Name", "FirstName", "Firstname", "first_name", "firstname", "First Name(s)"];
+export const LAST_NAME_KEYS = ["Last Name", "LastName", "Lastname", "last_name", "lastname", "Family Name"];
+export const ACTIVITY_TYPE_KEYS = ["Activity Type", "activity type", "Type", "type"];
+export const ACTIVITY_NAME_KEYS = ["Name", "name"];
+export const FACILITATORS_KEYS = ["Facilitators", "facilitators"];
 
 const INDIVIDUALS_HEADER_CANONICAL = new Set([
   "firstname", "lastname", "address", "addressline1", "addressline2",
@@ -35,7 +42,7 @@ export function normalizeHeaderCell(cell) {
 /**
  * Find the first row that looks like a header (contains at least minMatches expected column names).
  */
-export function findHeaderRow(rawRows, canonicalSet, minMatches = 2) {
+export function findHeaderRow(rawRows, canonicalSet, minMatches = HEADER_MIN_MATCHES) {
   for (let i = 0; i < rawRows.length; i++) {
     const row = rawRows[i];
     if (!Array.isArray(row)) continue;

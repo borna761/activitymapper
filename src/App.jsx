@@ -21,6 +21,11 @@ import {
   LOCALITY_KEYS,
   REGION_KEYS,
   NATIONAL_COMMUNITY_KEYS,
+  FIRST_NAME_KEYS,
+  LAST_NAME_KEYS,
+  ACTIVITY_TYPE_KEYS,
+  ACTIVITY_NAME_KEYS,
+  FACILITATORS_KEYS,
   findIndividualsHeaderRow,
   findActivitiesHeaderRow,
 } from "./utils/parsing";
@@ -38,18 +43,18 @@ const getShortActivityName = name => {
   return idx === -1 ? name : name.slice(0, idx);
 };
 
-// Helper to sort by activity type, then activity name, then facilitator
+// Helper to sort by activity type, then activity name, then facilitator (uses shared column keys)
 function sortActivities(a, b) {
-  const typeA = (a['Activity Type'] || '').toLowerCase();
-  const typeB = (b['Activity Type'] || '').toLowerCase();
+  const typeA = (getField(a, ACTIVITY_TYPE_KEYS) || '').toLowerCase();
+  const typeB = (getField(b, ACTIVITY_TYPE_KEYS) || '').toLowerCase();
   if (typeA < typeB) return -1;
   if (typeA > typeB) return 1;
-  const nameA = getShortActivityName(a['Name'] || a['name'] || '').toLowerCase();
-  const nameB = getShortActivityName(b['Name'] || b['name'] || '').toLowerCase();
+  const nameA = getShortActivityName(getField(a, ACTIVITY_NAME_KEYS) || '').toLowerCase();
+  const nameB = getShortActivityName(getField(b, ACTIVITY_NAME_KEYS) || '').toLowerCase();
   if (nameA < nameB) return -1;
   if (nameA > nameB) return 1;
-  const facA = (a['Facilitators'] || '').toLowerCase();
-  const facB = (b['Facilitators'] || '').toLowerCase();
+  const facA = (getField(a, FACILITATORS_KEYS) || '').toLowerCase();
+  const facB = (getField(b, FACILITATORS_KEYS) || '').toLowerCase();
   if (facA < facB) return -1;
   if (facA > facB) return 1;
   return 0;
@@ -138,6 +143,7 @@ export default function ActivityMapper() {
 
   const handleLatLonUpload = (e) => {
     const file = e.target.files[0];
+    const input = e.target;
     if (!file) return;
     setIsLatLonLoading(true);
     setActivityMarkers([]);
@@ -155,19 +161,16 @@ export default function ActivityMapper() {
       const facilitatorActivities = {};
       // Track unique activities by type (not per facilitator)
       const uniqueActivityRows = new Set();
-      const activityTypeKeys = ['Activity Type', 'activity type', 'Type', 'type'];
-      const nameKeys = ['Name', 'name'];
-      const facilitatorsKeys = ['Facilitators', 'facilitators'];
       data.forEach(row => {
-        const activityTypeRaw = getField(row, activityTypeKeys) || '';
+        const activityTypeRaw = getField(row, ACTIVITY_TYPE_KEYS) || '';
         const activityType = ACTIVITY_TYPE_MAP[activityTypeRaw.trim().toLowerCase()];
         if (!activityType) return;
-        const facilitatorsRaw = getField(row, facilitatorsKeys) || '';
+        const facilitatorsRaw = getField(row, FACILITATORS_KEYS) || '';
         if (!facilitatorsRaw.trim()) {
           noFacilitators.push(row);
           return;
         }
-        const activityName = getField(row, nameKeys) || '';
+        const activityName = getField(row, ACTIVITY_NAME_KEYS) || '';
         const uniqueKey = `${activityName}|${activityType}`;
         if (!uniqueActivityRows.has(uniqueKey)) {
           typeCounts[activityType] = (typeCounts[activityType] || 0) + 1;
@@ -244,6 +247,7 @@ export default function ActivityMapper() {
         const headerRowIndex = findActivitiesHeaderRow(rawRows);
         const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
         processActivities(rows);
+        input.value = '';
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -264,6 +268,7 @@ export default function ActivityMapper() {
               return obj;
             }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
             processActivities(rows);
+            input.value = '';
           },
         });
       };
@@ -271,12 +276,14 @@ export default function ActivityMapper() {
     }
   };
 
-  const geocodeAddress = async (addr) => {
+  const GEOCODE_MAX_RETRIES = 3;
+  const geocodeAddress = async (addr, retryCount = 0) => {
     try {
       await limiter.removeTokens(1);
     } catch {
+      if (retryCount >= GEOCODE_MAX_RETRIES) return null;
       await new Promise(r => setTimeout(r, 1000));
-      return geocodeAddress(addr);
+      return geocodeAddress(addr, retryCount + 1);
     }
     const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(addr)}&proximity=ip&access_token=${MAPBOX_TOKEN}`;
     const res = await fetch(url);
@@ -289,19 +296,10 @@ export default function ActivityMapper() {
     return null;
   };
 
-  const getNameField = (row, keys) => {
-    for (const key of keys) {
-      for (const k in row) {
-        if (k.replace(/\s|_/g, '').toLowerCase() === key.replace(/\s|_/g, '').toLowerCase()) {
-          return row[k];
-        }
-      }
-    }
-    return '';
-  };
-
   const handleAddressUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0];
+    const input = e.target;
+    if (!file) return;
     setIsAddressLoading(true);
     setGeocodeError(null);
     setHomeMarkers([]);
@@ -318,7 +316,7 @@ export default function ActivityMapper() {
         const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         const headerRowIndex = findIndividualsHeaderRow(rawRows);
         const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
-        geocodeRows(rows);
+        geocodeRows(rows).then(() => { input.value = ''; });
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -338,7 +336,7 @@ export default function ActivityMapper() {
               });
               return obj;
             }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
-            geocodeRows(rows);
+            geocodeRows(rows).then(() => { input.value = ''; });
           }
         });
       };
@@ -417,8 +415,8 @@ export default function ActivityMapper() {
     }
     const allIndividuals = rows.map((r, idx) => {
       const geo = geocodedMap[addressKey(r)];
-      const firstName = getNameField(r, ['First Name', 'FirstName', 'Firstname', 'first_name', 'firstname', 'First Name(s)']);
-      const lastName = getNameField(r, ['Last Name', 'LastName', 'Lastname', 'last_name', 'lastname', 'Family Name']);
+      const firstName = getField(r, FIRST_NAME_KEYS) || '';
+      const lastName = getField(r, LAST_NAME_KEYS) || '';
       return geo
         ? {
             ...r,
@@ -617,7 +615,9 @@ export default function ActivityMapper() {
                   <div className="flex justify-end mt-2">
                     <button
                       onClick={() => {
-                        setHomeMarkers(prev => prev.filter(h => h !== selectedHome));
+                        setHomeMarkers(prev => prev.filter(h => (
+                          (h.id != null && selectedHome.id != null) ? h.id !== selectedHome.id : h !== selectedHome
+                        )));
                         setSelectedHome(null);
                       }}
                       className="px-3 py-1 bg-red-600 text-white text-xs rounded shadow"
@@ -694,9 +694,9 @@ export default function ActivityMapper() {
             <ul className="list-disc pl-6">
               {activitiesNoFacilitators.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                  {getField(row, ACTIVITY_TYPE_KEYS) ? `${getField(row, ACTIVITY_TYPE_KEYS)}: ` : ''}
+                  {getShortActivityName(getField(row, ACTIVITY_NAME_KEYS) || '[No Name]')}
+                  {getField(row, FACILITATORS_KEYS) ? ` - Facilitators: ${getField(row, FACILITATORS_KEYS)}` : ''}
                 </li>
               ))}
             </ul>
@@ -709,9 +709,9 @@ export default function ActivityMapper() {
             <ul className="list-disc pl-6">
               {activitiesFacilitatorNotFound.slice().sort(sortActivities).map((row, idx) => (
                 <li key={idx} className="mb-1">
-                  {row['Activity Type'] ? `${row['Activity Type']}: ` : ''}
-                  {getShortActivityName(row['Name'] || row['name'] || '[No Name]')}
-                  {row['Facilitators'] ? ` - Facilitators: ${row['Facilitators']}` : ''}
+                  {getField(row, ACTIVITY_TYPE_KEYS) ? `${getField(row, ACTIVITY_TYPE_KEYS)}: ` : ''}
+                  {getShortActivityName(getField(row, ACTIVITY_NAME_KEYS) || '[No Name]')}
+                  {getField(row, FACILITATORS_KEYS) ? ` - Facilitators: ${getField(row, FACILITATORS_KEYS)}` : ''}
                 </li>
               ))}
             </ul>
