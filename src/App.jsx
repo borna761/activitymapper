@@ -97,7 +97,6 @@ export default function ActivityMapper() {
   const [isBatchingMarkers, setIsBatchingMarkers] = useState(false);
   const [batchedActivityMarkers, setBatchedActivityMarkers] = useState([]);
   const [batchedHomeMarkers, setBatchedHomeMarkers] = useState([]);
-  const [skipIndividualRows, setSkipIndividualRows] = useState(0);
 
   const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
 
@@ -284,6 +283,29 @@ export default function ActivityMapper() {
     return '';
   };
 
+  // Canonical header names we expect in the individuals file (normalized: no spaces/underscores, lowercase)
+  const INDIVIDUALS_HEADER_CANONICAL = new Set([
+    'firstname', 'lastname', 'address', 'addressline1', 'addressline2',
+    'focusneighbourhood', 'focusneighborhood', 'neighbourhood', 'neighborhood',
+    'locality', 'region', 'nationalcommunity', 'postal', 'postalcode', 'postcode', 'zip', 'zipcode'
+  ]);
+  const normalizeHeaderCell = (cell) => String(cell ?? '').trim().replace(/\s|_/g, '').toLowerCase();
+
+  // Find the first row that looks like a header (contains at least 2 expected column names).
+  const findIndividualsHeaderRow = (rawRows) => {
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!Array.isArray(row)) continue;
+      let matches = 0;
+      for (const cell of row) {
+        const norm = normalizeHeaderCell(cell);
+        if (norm && INDIVIDUALS_HEADER_CANONICAL.has(norm)) matches++;
+      }
+      if (matches >= 2) return i;
+    }
+    return 0;
+  };
+
   const handleAddressUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setIsAddressLoading(true);
@@ -315,15 +337,15 @@ export default function ActivityMapper() {
       setFacilitatorNeighborhoodLookup(lookup);
     };
 
-    const skip = Math.max(0, parseInt(skipIndividualRows, 10) || 0);
-    let rows = [];
     if (file.name.endsWith('.xlsx')) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        const opts = skip > 0 ? { range: skip } : {};
-        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], opts);
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const headerRowIndex = findIndividualsHeaderRow(rawRows);
+        const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
         geocodeRows(rows);
       };
       reader.readAsArrayBuffer(file);
@@ -331,12 +353,20 @@ export default function ActivityMapper() {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const text = ev.target.result || '';
-        const lines = text.split(/\r?\n/).filter((l, i) => i >= skip);
-        const csv = lines.join('\n');
-        Papa.parse(csv, {
-          header: true, skipEmptyLines: true,
-          complete: ({ data }) => {
-            geocodeRows(data);
+        Papa.parse(text, {
+          header: false,
+          skipEmptyLines: true,
+          complete: ({ data: rawRows }) => {
+            const headerRowIndex = findIndividualsHeaderRow(rawRows);
+            const headers = rawRows[headerRowIndex] || [];
+            const rows = rawRows.slice(headerRowIndex + 1).map((row) => {
+              const obj = {};
+              headers.forEach((h, i) => {
+                obj[String(h ?? '').trim() || `Column${i}`] = row[i] ?? '';
+              });
+              return obj;
+            }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
+            geocodeRows(rows);
           }
         });
       };
@@ -344,11 +374,37 @@ export default function ActivityMapper() {
     }
   }
 
+// Helper: get row value by trying multiple key names (same logic as getNameField, for use at module scope)
+const getField = (row, keys) => {
+  for (const key of keys) {
+    for (const k in row) {
+      if (String(k).trim().replace(/\s|_/g, '').toLowerCase() === String(key).trim().replace(/\s|_/g, '').toLowerCase()) {
+        return row[k];
+      }
+    }
+  }
+  return '';
+};
+
+const NEIGHBORHOOD_KEYS = ['Focus Neighbourhood', 'Focus Neighborhood', 'Neighbourhood', 'Neighborhood'];
+const POSTAL_KEYS = ['Postal Code', 'Postal', 'Postcode', 'Zip', 'ZIP Code', 'Zip Code'];
+
 const geocodeRows = async (rows) => {
+  // Street address: "Address" or "Address Line 1" + "Address Line 2" (flexible key matching)
+  const getStreetPart = (r) => {
+    const addr = getField(r, ['Address']);
+    if (addr) return addr;
+    const line1 = getField(r, ['Address Line 1', 'Address line 1']);
+    const line2 = getField(r, ['Address Line 2', 'Address line 2']);
+    return [line1, line2].filter(Boolean).join(', ');
+  };
+  const getNeighborhood = (r) => (getField(r, NEIGHBORHOOD_KEYS) || '').trim();
+  const getPostal = (r) => (getField(r, POSTAL_KEYS) || '').trim();
   // Step 1: Deduplicate by address key for geocoding
   const addressKey = r => [
-    r['Address'] || '',
-    r['Focus Neighbourhood'] || '',
+    getStreetPart(r),
+    getNeighborhood(r),
+    getPostal(r),
     r['Locality'] || '',
     r['Region'] || '',
     r['National Community'] || ''
@@ -362,8 +418,9 @@ const geocodeRows = async (rows) => {
   const geocodedMap = {};
   for (const row of uniqueRows) {
     const query = [
-      row['Address'] || '',
-      row['Focus Neighbourhood'] || '',
+      getStreetPart(row),
+      getNeighborhood(row),
+      getPostal(row),
       row['Locality'] || '',
       row['Region'] || '',
       row['National Community'] || ''
@@ -394,8 +451,9 @@ const geocodeRows = async (rows) => {
     setHomeMarkers(results);
     // Treat blank neighborhoods as 'Other'
     const allNeighborhoodsRaw = results.map(r => {
-      const n = (r['Focus Neighbourhood'] || '').trim();
-      return n ? n : 'Other';
+      const n = getField(r, NEIGHBORHOOD_KEYS);
+      const trimmed = (n || '').trim();
+      return trimmed ? trimmed : 'Other';
     });
     let uniqueNeighborhoods = Array.from(new Set(allNeighborhoodsRaw));
     uniqueNeighborhoods = uniqueNeighborhoods.filter(n => n !== 'Other').sort((a, b) => a.localeCompare(b));
@@ -408,7 +466,7 @@ const geocodeRows = async (rows) => {
     const lookup = {};
     results.forEach(h => {
       const fullName = normalizeName(`${h.firstName || ''} ${h.lastName || ''}`);
-      lookup[fullName] = (h['Focus Neighbourhood'] || '').trim() || 'Other';
+      lookup[fullName] = (getField(h, NEIGHBORHOOD_KEYS) || '').trim() || 'Other';
     });
     setFacilitatorNeighborhoodLookup(lookup);
   };
@@ -450,7 +508,7 @@ const geocodeRows = async (rows) => {
   );
   const filteredHomeMarkers = useMemo(() =>
     homeMarkers.filter(p => {
-      let n = (p['Focus Neighbourhood'] || '').trim();
+      let n = (getField(p, NEIGHBORHOOD_KEYS) || '').trim();
       if (!n) n = 'Other';
       return selectedNeighborhoods.includes(n);
     }),
@@ -481,25 +539,11 @@ const geocodeRows = async (rows) => {
                 ></span>
               )}
             </span>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={handleAddressUpload}
-                className="block w-full border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
-              <span className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <label htmlFor="skip-rows">Skip first</label>
-                <input
-                  id="skip-rows"
-                  type="number"
-                  min={0}
-                  value={skipIndividualRows}
-                  onChange={e => setSkipIndividualRows(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-16 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                />
-                rows (header row)
-              </span>
-            </div>
+            <input
+              type="file"
+              accept=".csv,.xlsx"
+              onChange={handleAddressUpload}
+              className="block w-full mt-2 border border-gray-300 rounded-lg text-md cursor-pointer bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-400 file:bg-gray-200 file:border-0 file:me-4 file:py-3 file:px-4 dark:file:bg-gray-800 dark:file:text-gray-400" />
           </label>
           <label className="block text-md font-medium">
             <span className="flex justify-between">
