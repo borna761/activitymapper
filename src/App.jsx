@@ -370,8 +370,8 @@ export default function ActivityMapper() {
     const getStreetPart = (r) => {
       const addr = getField(r, ['Address']);
       if (addr) return addr;
-      const line1 = getField(r, ['Address Line 1', 'Address line 1']).replace(/^\d+-/, "");
-      const line2 = getField(r, ['Address Line 2', 'Address line 2']);
+      const line1 = String(getField(r, ['Address Line 1', 'Address line 1'])).replace(/^\d+-/, "");
+      const line2 = String(getField(r, ['Address Line 2', 'Address line 2']));
       return [line1, line2].filter(Boolean).join(', ');
     };
     const getNeighborhood = (r) => (getField(r, NEIGHBORHOOD_KEYS) || '').trim();
