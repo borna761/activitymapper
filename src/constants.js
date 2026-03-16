@@ -23,3 +23,4 @@ export const ACTIVITY_MARKER_RADIUS_DEG = 0.0005;
 export const MARKER_BATCH_SIZE = 200;
 export const DEBOUNCE_MS = 200;
 export const HEADER_MIN_MATCHES = 2;
+export const MAX_ROWS = 2000;
