@@ -1,8 +1,6 @@
 // ActivityMapper.jsx
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import { RateLimiter } from "limiter";
 import {
   CONTAINER_STYLE as containerStyle,
@@ -13,9 +11,13 @@ import {
   ACTIVITY_MARKER_RADIUS_DEG,
   MARKER_BATCH_SIZE,
   DEBOUNCE_MS,
+  MAX_ROWS,
 } from "./constants";
 import {
   getField,
+  ADDRESS_KEYS,
+  ADDRESS_LINE1_KEYS,
+  ADDRESS_LINE2_KEYS,
   NEIGHBORHOOD_KEYS,
   POSTAL_KEYS,
   LOCALITY_KEYS,
@@ -29,12 +31,26 @@ import {
   findIndividualsHeaderRow,
   findActivitiesHeaderRow,
 } from "./utils/parsing";
+import { parseFile } from "./utils/parseFile";
 import { getPixelPosition } from "./utils/mapUtils";
 
 const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
+
+const GEOCODE_MAX_RETRIES = 3;
+
+// Helper to normalize names for matching
+const normalizeName = name => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Map activity type to code
+const ACTIVITY_TYPE_MAP = {
+  "children's class": 'CC',
+  'junior youth group': 'JY',
+  'study circle': 'SC',
+  'devotional': 'DM',
+};
 
 // Helper to get activity name before the first comma, with error handling
 const getShortActivityName = name => {
@@ -58,6 +74,20 @@ function sortActivities(a, b) {
   if (facA < facB) return -1;
   if (facA > facB) return 1;
   return 0;
+}
+
+function MarkerPopup({ map, lat, lng, onClose, children }) {
+  const { left, top } = getPixelPosition(map, lat, lng);
+  return (
+    <div style={{ position: 'absolute', left, top, zIndex: 1000, transform: 'translate(-50%, -100%)' }}>
+      <div className="pt-0 px-4 pb-3 min-w-[200px] bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg shadow-lg">
+        <div className="flex justify-end">
+          <button onClick={onClose} className="text-xl font-bold">×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 // Debounced update for selectedNeighborhoods
@@ -91,7 +121,10 @@ export default function ActivityMapper() {
   const [geocodeError, setGeocodeError] = useState(null);
   const homeMarkersRef = useRef([]);
 
-  const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+  const limiterRef = useRef(null);
+  if (limiterRef.current === null) {
+    limiterRef.current = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+  }
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -130,18 +163,7 @@ export default function ActivityMapper() {
     }
   }, []);
 
-  // Helper to normalize names for matching
-  const normalizeName = name => name.trim().replace(/\s+/g, ' ').toLowerCase();
-
-  // Map activity type to code
-  const ACTIVITY_TYPE_MAP = {
-    "children's class": 'CC',
-    'junior youth group': 'JY',
-    'study circle': 'SC',
-    'devotional': 'DM',
-  };
-
-  const handleLatLonUpload = (e) => {
+  const handleLatLonUpload = async (e) => {
     const file = e.target.files[0];
     const input = e.target;
     if (!file) return;
@@ -237,49 +259,24 @@ export default function ActivityMapper() {
       setIsLatLonLoading(false);
     };
 
-    if (file.name.endsWith('.xlsx')) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const data = new Uint8Array(ev.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const headerRowIndex = findActivitiesHeaderRow(rawRows);
-        const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
+    try {
+      const rows = await parseFile(file, findActivitiesHeaderRow);
+      if (rows.length > MAX_ROWS) {
+        setGeocodeError(`File has ${rows.length} rows — maximum is ${MAX_ROWS}.`);
+        setIsLatLonLoading(false);
+      } else {
         processActivities(rows);
-        input.value = '';
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = ev.target.result || '';
-        Papa.parse(text, {
-          header: false,
-          skipEmptyLines: true,
-          complete: ({ data: rawRows }) => {
-            const headerRowIndex = findActivitiesHeaderRow(rawRows);
-            const headers = rawRows[headerRowIndex] || [];
-            const rows = rawRows.slice(headerRowIndex + 1).map((row) => {
-              const obj = {};
-              headers.forEach((h, i) => {
-                obj[String(h ?? '').trim() || `Column${i}`] = row[i] ?? '';
-              });
-              return obj;
-            }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
-            processActivities(rows);
-            input.value = '';
-          },
-        });
-      };
-      reader.readAsText(file);
+      }
+    } catch (err) {
+      setGeocodeError(err.message);
+      setIsLatLonLoading(false);
     }
+    input.value = '';
   };
 
-  const GEOCODE_MAX_RETRIES = 3;
   const geocodeAddress = async (addr, retryCount = 0) => {
     try {
-      await limiter.removeTokens(1);
+      await limiterRef.current.removeTokens(1);
     } catch {
       if (retryCount >= GEOCODE_MAX_RETRIES) return null;
       await new Promise(r => setTimeout(r, 1000));
@@ -307,41 +304,19 @@ export default function ActivityMapper() {
     setActivitiesNoFacilitators([]);
     setActivitiesFacilitatorNotFound([]);
 
-    if (file.name.endsWith('.xlsx')) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const data = new Uint8Array(ev.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const headerRowIndex = findIndividualsHeaderRow(rawRows);
-        const rows = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
-        geocodeRows(rows).then(() => { input.value = ''; });
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const text = ev.target.result || '';
-        Papa.parse(text, {
-          header: false,
-          skipEmptyLines: true,
-          complete: ({ data: rawRows }) => {
-            const headerRowIndex = findIndividualsHeaderRow(rawRows);
-            const headers = rawRows[headerRowIndex] || [];
-            const rows = rawRows.slice(headerRowIndex + 1).map((row) => {
-              const obj = {};
-              headers.forEach((h, i) => {
-                obj[String(h ?? '').trim() || `Column${i}`] = row[i] ?? '';
-              });
-              return obj;
-            }).filter((obj) => Object.keys(obj).some((k) => obj[k] !== '' && obj[k] != null));
-            geocodeRows(rows).then(() => { input.value = ''; });
-          }
-        });
-      };
-      reader.readAsText(file);
+    try {
+      const rows = await parseFile(file, findIndividualsHeaderRow);
+      if (rows.length > MAX_ROWS) {
+        setGeocodeError(`File has ${rows.length} rows — maximum is ${MAX_ROWS}.`);
+        setIsAddressLoading(false);
+      } else {
+        await geocodeRows(rows);
+      }
+    } catch (err) {
+      setGeocodeError(err.message);
+      setIsAddressLoading(false);
     }
+    input.value = '';
   };
 
   const processResults = useCallback(results => {
@@ -368,10 +343,10 @@ export default function ActivityMapper() {
 
   const geocodeRows = useCallback(async (rows) => {
     const getStreetPart = (r) => {
-      const addr = getField(r, ['Address']);
+      const addr = getField(r, ADDRESS_KEYS);
       if (addr) return addr;
-      const line1 = String(getField(r, ['Address Line 1', 'Address line 1'])).replace(/^\d+-/, "");
-      const line2 = String(getField(r, ['Address Line 2', 'Address line 2']));
+      const line1 = String(getField(r, ADDRESS_LINE1_KEYS)).replace(/^\d+-/, "");
+      const line2 = String(getField(r, ADDRESS_LINE2_KEYS));
       return [line1, line2].filter(Boolean).join(', ');
     };
     const getNeighborhood = (r) => (getField(r, NEIGHBORHOOD_KEYS) || '').trim();
@@ -494,7 +469,6 @@ export default function ActivityMapper() {
       >
         {isAddressLoading && "Loading individuals file…"}
         {isLatLonLoading && "Loading activities…"}
-        {geocodeError ?? ""}
       </div>
       <div className="max-w-[1400px] mx-auto">
         <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
@@ -578,57 +552,37 @@ export default function ActivityMapper() {
               onClick={() => { setSelectedHome(p); setSelectedActivity(null); }}
             />
           ))}
-          {selectedActivity && mapRef.current && (() => {
-            const { left, top } = getPixelPosition(mapRef.current, selectedActivity.lat, selectedActivity.lng);
-            return (
-              <div
-                style={{ position: 'absolute', left, top, zIndex: 1000, transform: 'translate(-50%, -100%)' }}
-              >
-                <div className="pt-0 px-4 pb-3 min-w-[200px] bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg shadow-lg">
-                  <div className="flex justify-end">
-                    <button onClick={() => setSelectedActivity(null)} className="text-xl font-bold">×</button>
-                  </div>
-                  <p className="mb-3 text-sm font-normal break-words">
-                    <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
-                    <br />
-                    <span>{getShortActivityName(selectedActivity.activityName) || '[No Activity Name]'}</span>
-                    <br />
-                    <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
-                  </p>
-                </div>
+          {selectedActivity && mapRef.current && (
+            <MarkerPopup map={mapRef.current} lat={selectedActivity.lat} lng={selectedActivity.lng} onClose={() => setSelectedActivity(null)}>
+              <p className="mb-3 text-sm font-normal break-words">
+                <span className="font-bold">{selectedActivity.activityTypeRaw || '[No Activity Type]'}</span>
+                <br />
+                <span>{getShortActivityName(selectedActivity.activityName) || '[No Activity Name]'}</span>
+                <br />
+                <span>{selectedActivity.facilitators || '[No Facilitators]'}</span>
+              </p>
+            </MarkerPopup>
+          )}
+          {selectedHome && mapRef.current && (
+            <MarkerPopup map={mapRef.current} lat={selectedHome.lat} lng={selectedHome.lng} onClose={() => setSelectedHome(null)}>
+              <p className="mb-3 text-sm font-normal break-words">
+                {selectedHome.address}
+              </p>
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() => {
+                    setHomeMarkers(prev => prev.filter(h => (
+                      (h.id != null && selectedHome.id != null) ? h.id !== selectedHome.id : h !== selectedHome
+                    )));
+                    setSelectedHome(null);
+                  }}
+                  className="px-3 py-1 bg-red-600 text-white text-xs rounded shadow"
+                >
+                  Remove
+                </button>
               </div>
-            );
-          })()}
-          {selectedHome && mapRef.current && (() => {
-            const { left, top } = getPixelPosition(mapRef.current, selectedHome.lat, selectedHome.lng);
-            return (
-              <div
-                style={{ position: 'absolute', left, top, zIndex: 1000, transform: 'translate(-50%, -100%)' }}
-              >
-                <div className="pt-0 px-4 pb-3 min-w-[200px] bg-white text-black dark:bg-black dark:text-white border border-gray-300 dark:border-gray-800 rounded-lg shadow-lg">
-                  <div className="flex justify-end">
-                    <button onClick={() => setSelectedHome(null)} className="text-xl font-bold">×</button>
-                  </div>
-                  <p className="mb-3 text-sm font-normal break-words">
-                    {selectedHome.address}
-                  </p>
-                  <div className="flex justify-end mt-2">
-                    <button
-                      onClick={() => {
-                        setHomeMarkers(prev => prev.filter(h => (
-                          (h.id != null && selectedHome.id != null) ? h.id !== selectedHome.id : h !== selectedHome
-                        )));
-                        setSelectedHome(null);
-                      }}
-                      className="px-3 py-1 bg-red-600 text-white text-xs rounded shadow"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+            </MarkerPopup>
+          )}
         </GoogleMap>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 pt-4 text-sm">
           {Object.entries(ICON_COLORS).map(([key]) => (

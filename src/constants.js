@@ -1,5 +1,5 @@
 // Map and UI
-export const CONTAINER_STYLE = { width: "1400px", height: "850px" };
+export const CONTAINER_STYLE = { width: "100%", height: "850px" };
 
 export const ICON_COLORS = {
   CC: "#4CAF50",
@@ -23,3 +23,4 @@ export const ACTIVITY_MARKER_RADIUS_DEG = 0.0005;
 export const MARKER_BATCH_SIZE = 200;
 export const DEBOUNCE_MS = 200;
 export const HEADER_MIN_MATCHES = 2;
+export const MAX_ROWS = 2000;
