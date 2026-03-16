@@ -39,8 +39,10 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
 
+const GEOCODE_MAX_RETRIES = 3;
+
 // Helper to normalize names for matching
-const normalizeName = name => name.trim().replace(/\s+/g, ' ').toLowerCase();
+const normalizeName = name => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 // Map activity type to code
 const ACTIVITY_TYPE_MAP = {
@@ -105,7 +107,10 @@ export default function ActivityMapper() {
   const [geocodeError, setGeocodeError] = useState(null);
   const homeMarkersRef = useRef([]);
 
-  const limiterRef = useRef(new RateLimiter({ tokensPerInterval: 1000, interval: "minute" }));
+  const limiterRef = useRef(null);
+  if (limiterRef.current === null) {
+    limiterRef.current = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+  }
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -279,7 +284,6 @@ export default function ActivityMapper() {
     }
   };
 
-  const GEOCODE_MAX_RETRIES = 3;
   const geocodeAddress = async (addr, retryCount = 0) => {
     try {
       await limiterRef.current.removeTokens(1);
