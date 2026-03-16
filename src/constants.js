@@ -1,5 +1,5 @@
 // Map and UI
-export const CONTAINER_STYLE = { width: "1400px", height: "850px" };
+export const CONTAINER_STYLE = { width: "100%", height: "850px" };
 
 export const ICON_COLORS = {
   CC: "#4CAF50",

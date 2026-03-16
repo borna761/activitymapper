@@ -14,16 +14,19 @@ export function getField(row, keys) {
   return "";
 }
 
+export const ADDRESS_KEYS = ["Address"];
+export const ADDRESS_LINE1_KEYS = ["Address Line 1"];
+export const ADDRESS_LINE2_KEYS = ["Address Line 2"];
 export const NEIGHBORHOOD_KEYS = ["Focus Neighbourhood", "Focus Neighborhood", "Neighbourhood", "Neighborhood"];
 export const POSTAL_KEYS = ["Postal Code", "Postal", "Postcode", "Zip", "ZIP Code", "Zip Code"];
-export const LOCALITY_KEYS = ["Locality", "City", "locality", "city"];
-export const REGION_KEYS = ["Region", "State", "Province", "region", "state"];
-export const NATIONAL_COMMUNITY_KEYS = ["National Community", "Country", "national community", "country"];
-export const FIRST_NAME_KEYS = ["First Name", "FirstName", "Firstname", "first_name", "firstname", "First Name(s)"];
-export const LAST_NAME_KEYS = ["Last Name", "LastName", "Lastname", "last_name", "lastname", "Family Name"];
-export const ACTIVITY_TYPE_KEYS = ["Activity Type", "activity type", "Type", "type"];
-export const ACTIVITY_NAME_KEYS = ["Name", "name"];
-export const FACILITATORS_KEYS = ["Facilitators", "facilitators"];
+export const LOCALITY_KEYS = ["Locality", "City"];
+export const REGION_KEYS = ["Region", "State", "Province"];
+export const NATIONAL_COMMUNITY_KEYS = ["National Community", "Country"];
+export const FIRST_NAME_KEYS = ["First Name", "First Name(s)"];
+export const LAST_NAME_KEYS = ["Last Name", "Family Name"];
+export const ACTIVITY_TYPE_KEYS = ["Activity Type", "Type"];
+export const ACTIVITY_NAME_KEYS = ["Name"];
+export const FACILITATORS_KEYS = ["Facilitators"];
 
 const INDIVIDUALS_HEADER_CANONICAL = new Set([
   "firstname", "lastname", "address", "addressline1", "addressline2",

@@ -16,6 +16,9 @@ import {
 } from "./constants";
 import {
   getField,
+  ADDRESS_KEYS,
+  ADDRESS_LINE1_KEYS,
+  ADDRESS_LINE2_KEYS,
   NEIGHBORHOOD_KEYS,
   POSTAL_KEYS,
   LOCALITY_KEYS,
@@ -35,6 +38,17 @@ const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAP_ID;
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_API_KEY;
 const GOOGLE_MAP_LIBRARIES = ["places"];
+
+// Helper to normalize names for matching
+const normalizeName = name => name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Map activity type to code
+const ACTIVITY_TYPE_MAP = {
+  "children's class": 'CC',
+  'junior youth group': 'JY',
+  'study circle': 'SC',
+  'devotional': 'DM',
+};
 
 // Helper to get activity name before the first comma, with error handling
 const getShortActivityName = name => {
@@ -91,7 +105,7 @@ export default function ActivityMapper() {
   const [geocodeError, setGeocodeError] = useState(null);
   const homeMarkersRef = useRef([]);
 
-  const limiter = new RateLimiter({ tokensPerInterval: 1000, interval: "minute" });
+  const limiterRef = useRef(new RateLimiter({ tokensPerInterval: 1000, interval: "minute" }));
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -129,17 +143,6 @@ export default function ActivityMapper() {
       );
     }
   }, []);
-
-  // Helper to normalize names for matching
-  const normalizeName = name => name.trim().replace(/\s+/g, ' ').toLowerCase();
-
-  // Map activity type to code
-  const ACTIVITY_TYPE_MAP = {
-    "children's class": 'CC',
-    'junior youth group': 'JY',
-    'study circle': 'SC',
-    'devotional': 'DM',
-  };
 
   const handleLatLonUpload = (e) => {
     const file = e.target.files[0];
@@ -279,7 +282,7 @@ export default function ActivityMapper() {
   const GEOCODE_MAX_RETRIES = 3;
   const geocodeAddress = async (addr, retryCount = 0) => {
     try {
-      await limiter.removeTokens(1);
+      await limiterRef.current.removeTokens(1);
     } catch {
       if (retryCount >= GEOCODE_MAX_RETRIES) return null;
       await new Promise(r => setTimeout(r, 1000));
@@ -368,10 +371,10 @@ export default function ActivityMapper() {
 
   const geocodeRows = useCallback(async (rows) => {
     const getStreetPart = (r) => {
-      const addr = getField(r, ['Address']);
+      const addr = getField(r, ADDRESS_KEYS);
       if (addr) return addr;
-      const line1 = String(getField(r, ['Address Line 1', 'Address line 1'])).replace(/^\d+-/, "");
-      const line2 = String(getField(r, ['Address Line 2', 'Address line 2']));
+      const line1 = String(getField(r, ADDRESS_LINE1_KEYS)).replace(/^\d+-/, "");
+      const line2 = String(getField(r, ADDRESS_LINE2_KEYS));
       return [line1, line2].filter(Boolean).join(', ');
     };
     const getNeighborhood = (r) => (getField(r, NEIGHBORHOOD_KEYS) || '').trim();
@@ -494,7 +497,6 @@ export default function ActivityMapper() {
       >
         {isAddressLoading && "Loading individuals file…"}
         {isLatLonLoading && "Loading activities…"}
-        {geocodeError ?? ""}
       </div>
       <div className="max-w-[1400px] mx-auto">
         <h1 className="text-5xl font-bold text-center pb-14 text-indigo-600">Activity Mapper</h1>
